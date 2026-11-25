@@ -20,7 +20,7 @@ export function SidePanel() {
   const selectExperiment = useWorkbenchStore((state) => state.selectExperiment)
 
   return (
-    <aside className="flex flex-col gap-6 overflow-y-auto border-r border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] px-4 py-[18px] max-[980px]:flex-row max-[980px]:items-stretch max-[980px]:gap-3.5 max-[980px]:overflow-x-auto max-[980px]:overflow-y-hidden max-[980px]:border-b max-[980px]:border-r-0 max-[980px]:px-3 max-[980px]:py-2.5">
+    <aside className="preset-scroll flex flex-col gap-6 overflow-y-auto border-r border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] px-4 py-[18px] max-[980px]:flex-row max-[980px]:items-stretch max-[980px]:gap-3.5 max-[980px]:overflow-x-auto max-[980px]:overflow-y-hidden max-[980px]:border-b max-[980px]:border-r-0 max-[980px]:px-3 max-[980px]:py-2.5">
       <section className="flex flex-col gap-2.5 max-[980px]:min-w-[230px] max-[980px]:flex-none">
         <h2 className="m-0 flex items-center justify-between gap-2 text-[10.5px] font-semibold uppercase tracking-[0.13em] text-ink-faint">
           预设实验

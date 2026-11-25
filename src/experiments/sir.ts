@@ -140,7 +140,7 @@ function drawChart(
   state: SirState,
   params: ParamValues,
   chart: ChartLayout,
-): { yMax: number; tMax: number } {
+): void {
   const { plot } = chart
   const yMax = clamp(Math.max(0.12, state.peakI * 1.2, state.i * 1.2), 0.1, 1)
   const tMax = Math.max(30, Math.min(MAX_DAYS, Math.ceil((state.t * 1.08) / 10) * 10))
@@ -264,8 +264,6 @@ function drawChart(
     size: 9,
     color: CANVAS.textFaint,
   })
-
-  return { yMax, tMax }
 }
 
 function drawPanel(
