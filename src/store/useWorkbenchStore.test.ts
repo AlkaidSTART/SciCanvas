@@ -1,9 +1,26 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { GeneratedExperimentSpec } from '../ai/schema'
 import { EXPERIMENTS, DEFAULT_EXPERIMENT, DEFAULT_EXPERIMENT_ID } from '../experiments'
 import { createDefaultParams } from '../runtime/params'
 import { useWorkbenchStore } from './useWorkbenchStore'
 
 const initialState = useWorkbenchStore.getState()
+
+const aiSpec: GeneratedExperimentSpec = {
+  title: 'AI 谐振子',
+  domain: 'Physics / AI',
+  formulaLatex: 'x(t) = A\\cos(\\omega t)',
+  insight: '调节刚度观察振动周期变化。',
+  renderType: 'canvas2d',
+  controls: [
+    { type: 'slider', key: 'stiffness', label: '刚度', min: 0.1, max: 2, step: 0.1, default: 1 },
+  ],
+  simulationCode: `return {
+    createState: function () { return { x: 1 } },
+    step: function (state, params, dt) { return { x: state.x - params.stiffness * dt } },
+    draw: function () {}
+  }`,
+}
 
 beforeEach(() => {
   useWorkbenchStore.setState({
@@ -13,6 +30,8 @@ beforeEach(() => {
     reloadKey: 0,
     status: 'running',
     error: null,
+    source: 'preset',
+    aiSpec: null,
   })
 })
 
@@ -21,6 +40,7 @@ describe('案例切换', () => {
     const state = useWorkbenchStore.getState()
     expect(state.experiment.id).toBe(DEFAULT_EXPERIMENT_ID)
     expect(state.params).toEqual(createDefaultParams(DEFAULT_EXPERIMENT))
+    expect(state.source).toBe('preset')
   })
 
   for (const preset of EXPERIMENTS) {
@@ -38,6 +58,8 @@ describe('案例切换', () => {
       expect(after.status).toBe('running')
       expect(after.error).toBeNull()
       expect(after.reloadKey).toBe(before.reloadKey + 1)
+      expect(after.source).toBe('preset')
+      expect(after.aiSpec).toBeNull()
     })
   }
 
@@ -69,8 +91,61 @@ describe('案例切换', () => {
     expect(after.reloadKey).toBe(before.reloadKey)
   })
 
-  it('初始状态包含四个案例所需的动作', () => {
+  it('初始状态包含案例切换与回退动作', () => {
     expect(typeof initialState.selectExperiment).toBe('function')
     expect(typeof initialState.resetToDefault).toBe('function')
+    expect(typeof initialState.applyGeneratedExperiment).toBe('function')
+  })
+})
+
+describe('AI 实验应用与回退', () => {
+  it('应用生成结果会替换实验元数据并重置运行态', () => {
+    useWorkbenchStore.getState().setSpeed(2)
+    useWorkbenchStore.getState().syncStatus('paused')
+    const before = useWorkbenchStore.getState()
+
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec)
+    const after = useWorkbenchStore.getState()
+
+    expect(after.source).toBe('ai')
+    expect(after.aiSpec).toBe(aiSpec)
+    expect(after.experiment.title).toBe(aiSpec.title)
+    expect(after.experiment.domain).toBe(aiSpec.domain)
+    expect(after.experiment.formulaLatex).toBe(aiSpec.formulaLatex)
+    expect(after.experiment.controls).toEqual(aiSpec.controls)
+    expect(after.params).toEqual(createDefaultParams(after.experiment))
+    expect(after.speed).toBe(1)
+    expect(after.status).toBe('running')
+    expect(after.error).toBeNull()
+    expect(after.reloadKey).toBe(before.reloadKey + 1)
+  })
+
+  it('切换预设会退出 AI 实验', () => {
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec)
+    useWorkbenchStore.getState().selectExperiment(EXPERIMENTS[0].id)
+    const state = useWorkbenchStore.getState()
+    expect(state.source).toBe('preset')
+    expect(state.aiSpec).toBeNull()
+    expect(state.experiment.id).toBe(EXPERIMENTS[0].id)
+  })
+
+  it('从 AI 实验回到默认实验', () => {
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec)
+    useWorkbenchStore.getState().resetToDefault()
+    const state = useWorkbenchStore.getState()
+    expect(state.source).toBe('preset')
+    expect(state.aiSpec).toBeNull()
+    expect(state.experiment.id).toBe(DEFAULT_EXPERIMENT_ID)
+    expect(state.params).toEqual(createDefaultParams(DEFAULT_EXPERIMENT))
+  })
+
+  it('预设状态下重置保留当前案例', () => {
+    const preset = EXPERIMENTS[2]
+    useWorkbenchStore.getState().selectExperiment(preset.id)
+    useWorkbenchStore.getState().setParam(preset.controls[0].key, 0.001)
+    useWorkbenchStore.getState().resetToDefault()
+    const state = useWorkbenchStore.getState()
+    expect(state.experiment.id).toBe(preset.id)
+    expect(state.params).toEqual(createDefaultParams(preset))
   })
 })

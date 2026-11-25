@@ -1,20 +1,28 @@
 import { create } from 'zustand'
+import type { GeneratedExperimentSpec } from '../ai/schema'
 import { DEFAULT_EXPERIMENT, getExperimentById } from '../experiments'
 import type { RuntimeErrorInfo, RuntimeStatus } from '../runtime/CanvasRuntime'
 import { createDefaultParams, sanitizeParams } from '../runtime/params'
 import type { ControlValue, ExperimentDefinition, ParamValues } from '../types/experiment'
 
+export type ExperimentSource = 'preset' | 'ai'
+
 interface WorkbenchState {
   experiment: ExperimentDefinition
   params: ParamValues
   speed: number
-  /** 自增后触发运行时重建，用于「回到默认实验」和切换案例。 */
+  /** 自增后触发运行时重建，用于「回到默认实验」、切换案例与应用生成结果。 */
   reloadKey: number
   status: RuntimeStatus
   error: RuntimeErrorInfo | null
+  /** 当前实验来自内置预设还是 AI 生成。 */
+  source: ExperimentSource
+  /** AI 生成成功后的原始描述，供隔离沙盒初始化使用。 */
+  aiSpec: GeneratedExperimentSpec | null
   setParam: (key: string, value: ControlValue) => void
   setSpeed: (speed: number) => void
   selectExperiment: (id: string) => void
+  applyGeneratedExperiment: (spec: GeneratedExperimentSpec) => void
   syncStatus: (status: RuntimeStatus) => void
   syncError: (error: RuntimeErrorInfo | null) => void
   resetToDefault: () => void
@@ -31,6 +39,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
   reloadKey: 0,
   status: 'running',
   error: null,
+  source: 'preset',
+  aiSpec: null,
 
   setParam: (key, value) => {
     const { experiment, params } = get()
@@ -53,6 +63,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
         speed: 1,
         status: 'running',
         error: null,
+        source: 'preset',
+        aiSpec: null,
         reloadKey: reloadKey + 1,
       })
       return
@@ -60,6 +72,43 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
     set({
       experiment: next,
       params: createDefaultParams(next),
+      speed: 1,
+      status: 'running',
+      error: null,
+      source: 'preset',
+      aiSpec: null,
+      reloadKey: reloadKey + 1,
+    })
+  },
+
+  /**
+   * 应用已校验的生成结果。模型方法只是占位：AI 实验的实际推演
+   * 由隔离 iframe 沙盒执行，主线程运行时不会调用这里。
+   */
+  applyGeneratedExperiment: (spec) => {
+    const { reloadKey } = get()
+    const experiment: ExperimentDefinition = {
+      id: 'ai-generated',
+      title: spec.title,
+      domain: spec.domain,
+      formulaLatex: spec.formulaLatex,
+      insight: spec.insight,
+      renderType: 'canvas2d',
+      controls: spec.controls,
+      ...(spec.legend ? { legend: spec.legend } : {}),
+      model: {
+        createState: () => {
+          throw new Error('AI 实验需在隔离沙盒中运行')
+        },
+        step: (state) => state,
+        draw: () => {},
+      },
+    }
+    set({
+      experiment,
+      source: 'ai',
+      aiSpec: spec,
+      params: createDefaultParams(experiment),
       speed: 1,
       status: 'running',
       error: null,
@@ -71,12 +120,18 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
 
   syncError: (error) => set({ error }),
 
+  /** AI 实验失败或用户主动回退时，直接回到内置默认实验。 */
   resetToDefault: () => {
-    const { experiment, reloadKey } = get()
+    const { experiment, reloadKey, source } = get()
+    const target = source === 'ai' ? DEFAULT_EXPERIMENT : experiment
     set({
-      params: createDefaultParams(experiment),
+      experiment: target,
+      params: createDefaultParams(target),
       speed: 1,
+      status: 'running',
       error: null,
+      source: 'preset',
+      aiSpec: null,
       reloadKey: reloadKey + 1,
     })
   },

@@ -176,6 +176,48 @@ function validateControl(
   return null
 }
 
+/** 解析并校验控件数组，供完整实验校验与 AI 结构化输出复用。 */
+export function parseControls(raw: unknown): {
+  controls: ControlDefinition[]
+  issues: string[]
+} {
+  const issues: string[] = []
+  const controls: ControlDefinition[] = []
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { controls, issues: ['controls 必须是非空数组'] }
+  }
+  const seenKeys = new Set<string>()
+  raw.forEach((control, index) => {
+    const validated = validateControl(control, index, seenKeys, issues)
+    if (validated) controls.push(validated)
+  })
+  return { controls, issues }
+}
+
+/** 解析并校验图例数组；图例只影响画面说明，不参与仿真。 */
+export function parseLegend(raw: unknown): {
+  legend: LegendItem[]
+  issues: string[]
+} {
+  const issues: string[] = []
+  const legend: LegendItem[] = []
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { legend, issues: ['legend 必须是非空数组'] }
+  }
+  raw.forEach((item, index) => {
+    if (!isRecord(item) || !isNonEmptyString(item.label) || !isNonEmptyString(item.color)) {
+      issues.push(`legend[${index}] 必须包含非空的 label 与 color`)
+      return
+    }
+    if (item.dashed !== undefined && typeof item.dashed !== 'boolean') {
+      issues.push(`legend[${index}].dashed 必须是布尔值`)
+      return
+    }
+    legend.push(item as unknown as LegendItem)
+  })
+  return { legend, issues }
+}
+
 /**
  * 对来源不可信（预设、AI 生成、导入）的实验定义做运行时校验。
  * 校验通过时返回带类型的副本，失败时返回全部问题，便于工作台局部展示。
@@ -198,29 +240,10 @@ export function validateExperiment(input: unknown): ValidationResult {
   }
 
   if (input.legend !== undefined) {
-    if (!Array.isArray(input.legend) || input.legend.length === 0) {
-      issues.push('legend 必须是非空数组')
-    } else {
-      input.legend.forEach((item, index) => {
-        if (!isRecord(item) || !isNonEmptyString(item.label) || !isNonEmptyString(item.color)) {
-          issues.push(`legend[${index}] 必须包含非空的 label 与 color`)
-        } else if (item.dashed !== undefined && typeof item.dashed !== 'boolean') {
-          issues.push(`legend[${index}].dashed 必须是布尔值`)
-        }
-      })
-    }
+    issues.push(...parseLegend(input.legend).issues)
   }
 
-  const controls: ControlDefinition[] = []
-  if (!Array.isArray(input.controls) || input.controls.length === 0) {
-    issues.push('controls 必须是非空数组')
-  } else {
-    const seenKeys = new Set<string>()
-    input.controls.forEach((control, index) => {
-      const validated = validateControl(control, index, seenKeys, issues)
-      if (validated) controls.push(validated)
-    })
-  }
+  issues.push(...parseControls(input.controls).issues)
 
   const model = input.model
   if (!isRecord(model)) {

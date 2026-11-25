@@ -3,11 +3,13 @@ import type { RefObject } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import type { RuntimeErrorInfo, RuntimeStatus } from '../runtime/CanvasRuntime'
+import { SANDBOX_HTML } from '../runtime/sandboxBootstrap'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { AlertIcon } from './icons'
 
 interface CanvasStageProps {
   canvasRef: RefObject<HTMLCanvasElement | null>
+  iframeRef: RefObject<HTMLIFrameElement | null>
   onRetry: () => void
 }
 
@@ -29,8 +31,9 @@ const SCOPE_LABEL: Record<RuntimeErrorInfo['scope'], string> = {
   draw: '绘制阶段',
 }
 
-export function CanvasStage({ canvasRef, onRetry }: CanvasStageProps) {
+export function CanvasStage({ canvasRef, iframeRef, onRetry }: CanvasStageProps) {
   const experiment = useWorkbenchStore((state) => state.experiment)
+  const source = useWorkbenchStore((state) => state.source)
   const status = useWorkbenchStore((state) => state.status)
   const error = useWorkbenchStore((state) => state.error)
   const resetToDefault = useWorkbenchStore((state) => state.resetToDefault)
@@ -47,12 +50,28 @@ export function CanvasStage({ canvasRef, onRetry }: CanvasStageProps) {
 
   return (
     <section className="canvas-stage relative min-h-0 flex-1 overflow-hidden bg-surface" aria-label="实验画布">
-      <canvas ref={canvasRef} className="block h-full w-full" />
+      {source === 'ai' ? (
+        <iframe
+          ref={iframeRef}
+          className="block h-full w-full border-0"
+          title="AI 实验隔离沙盒"
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          srcDoc={SANDBOX_HTML}
+        />
+      ) : (
+        <canvas ref={canvasRef} className="block h-full w-full" />
+      )}
 
       <div className="formula-overlay pointer-events-none absolute left-[18px] top-[18px] w-[min(430px,calc(100%_-_150px))] rounded-xl border border-line bg-panel/85 px-4 pb-3.5 pt-[13px] shadow-[0_16px_36px_rgba(58,51,43,0.1)] backdrop-blur-md max-[980px]:w-[min(380px,calc(100%_-_36px))] max-[640px]:inset-x-3 max-[640px]:top-3 max-[640px]:w-auto max-[640px]:px-[13px] max-[640px]:py-[11px]">
         <div className="mb-2 flex flex-col gap-[3px]">
-          <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-accent-strong">
+          <span className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-accent-strong">
             {experiment.domain}
+            {source === 'ai' && (
+              <span className="rounded-[4px] border border-[rgba(138,118,168,0.4)] bg-[rgba(138,118,168,0.12)] px-1 py-px text-[8.5px] tracking-[0.08em] text-[#6d5a7d] normal-case">
+                AI 生成
+              </span>
+            )}
           </span>
           <span className="text-[13px] font-semibold text-ink">{experiment.title}</span>
         </div>
@@ -70,6 +89,12 @@ export function CanvasStage({ canvasRef, onRetry }: CanvasStageProps) {
         <span className={`size-1.5 rounded-full ${STATUS_DOT_STYLE[status]}`} />
         {STATUS_LABEL[status]}
       </div>
+
+      {source === 'ai' && (
+        <div className="pointer-events-none absolute bottom-3 left-[18px] rounded-full border border-line bg-panel/80 px-2.5 py-[5px] font-mono text-[9.5px] text-ink-faint backdrop-blur-sm max-[640px]:hidden">
+          隔离沙盒运行 · 无主应用与网络权限
+        </div>
+      )}
 
       {error && (
         <div
@@ -95,7 +120,7 @@ export function CanvasStage({ canvasRef, onRetry }: CanvasStageProps) {
                 type="button"
                 onClick={onRetry}
               >
-                重新初始化
+                {source === 'ai' ? '重新初始化沙盒' : '重新初始化'}
               </button>
               <button
                 className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"

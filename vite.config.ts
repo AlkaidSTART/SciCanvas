@@ -1,13 +1,31 @@
 import tailwindcss from '@tailwindcss/vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
+import { aiProxyPlugin } from './server/aiProxy.ts'
+
+const DEFAULT_TASK_TIMEOUT_MS = 45_000
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [
-    tailwindcss(),
-    react(),
-    babel({ presets: [reactCompilerPreset()] })
-  ],
+export default defineConfig(({ mode }) => {
+  // 模型凭证只在此构建进程中使用，不会注入客户端环境变量。
+  const env = loadEnv(mode, process.cwd(), '')
+  const timeoutMs = Number(env.AI_TIMEOUT_MS)
+
+  return {
+    plugins: [
+      tailwindcss(),
+      react(),
+      babel({ presets: [reactCompilerPreset()] }),
+      aiProxyPlugin({
+        apiKey: env.AI_API_KEY,
+        baseUrl: env.AI_BASE_URL || 'https://api.openai.com/v1',
+        model: env.AI_MODEL || 'gpt-4o-mini',
+        timeoutMs:
+          Number.isFinite(timeoutMs) && timeoutMs > 0
+            ? timeoutMs
+            : DEFAULT_TASK_TIMEOUT_MS,
+      }),
+    ],
+  }
 })
