@@ -277,12 +277,21 @@ function drawOscillator(
     size: 10,
   })
 
-  if (height > 260) {
+  if (height > 360) {
     drawText(ctx, `受迫阻尼振子 · c = ${readNumber(params, 'damping', 0.24).toFixed(2)} · t = ${state.t.toFixed(1)} s`, wallX, height - 22, {
       size: 10,
     })
     if (width >= 560) {
-      drawText(ctx, 'ω₀ = 2.00 rad/s', width - padRight, height - 22, { align: 'right', size: 10 })
+      const omega = readNumber(params, 'omega', 1.5)
+      const ratio = omega / 2
+      const nearResonance = Math.abs(ratio - 1) < 0.1
+      drawText(
+        ctx,
+        `ω/ω₀ = ${ratio.toFixed(2)}${nearResonance ? ' · 共振区' : ''}`,
+        width - padRight,
+        height - 22,
+        { align: 'right', size: 10, color: nearResonance ? COLORS.amberText : COLORS.text },
+      )
     }
   }
 }
@@ -431,6 +440,11 @@ export const dampedOscillator: ExperimentDefinition<DampedOscillatorState> = {
       label: '显示相空间轨迹',
       default: true,
     },
+  ],
+  legend: [
+    { label: '振子位移 x', color: COLORS.accent },
+    { label: '相空间轨迹', color: COLORS.accentSoft },
+    { label: '驱动力 F(t)', color: COLORS.amber },
   ],
   model: {
     createState,

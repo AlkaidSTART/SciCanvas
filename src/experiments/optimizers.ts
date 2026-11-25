@@ -8,10 +8,12 @@ import { readBooleanParam, readNumberParam, readStringParam } from '../runtime/p
 import {
   CANVAS,
   clamp,
+  drawLegendRow,
   drawPlotFrame,
   drawText,
   paintBackground,
   paintGrid,
+  plotTopPadding,
 } from './canvasKit'
 
 type OptimizerKey = 'sgd' | 'momentum' | 'adam'
@@ -85,10 +87,10 @@ const MAX_TRAIL = 900
 const CONVERGED_GRADIENT = 1e-3
 const ADAM_BETA2 = 0.999
 
-const AGENT_META: Array<{ key: OptimizerKey; label: string; color: string; short: string }> = [
-  { key: 'sgd', label: 'SGD', color: CANVAS.blue, short: 'SGD' },
-  { key: 'momentum', label: 'Momentum', color: CANVAS.peach, short: 'Mom' },
-  { key: 'adam', label: 'Adam', color: CANVAS.mint, short: 'Adam' },
+const AGENT_META: Array<{ key: OptimizerKey; label: string; color: string }> = [
+  { key: 'sgd', label: 'SGD', color: CANVAS.blue },
+  { key: 'momentum', label: 'Momentum', color: CANVAS.peach },
+  { key: 'adam', label: 'Adam', color: CANVAS.mint },
 ]
 
 const LEGEND: LegendItem[] = AGENT_META.map((agent) => ({
@@ -224,17 +226,23 @@ interface PlotLayout {
 function layout(width: number, height: number): PlotLayout {
   const wide = width >= 680
   const panelWidth = wide ? 176 : 0
-  const top = height >= 560 ? Math.min(150, height * 0.24) : 64
+  const gap = 26
+  const top = plotTopPadding(width, height)
   const left = 28
-  const right = width - panelWidth - 20
+  const right = width - 20
   const bottom = height - 34
-  const side = Math.max(80, Math.min(right - left, bottom - top))
-  const plotX = left + (right - left - side) / 2
-  const plotY = top + (bottom - top - side) / 2
+  const availableWidth = Math.max(80, right - left)
+  const side = Math.max(
+    80,
+    Math.min(availableWidth - (wide ? panelWidth + gap : 0), bottom - top),
+  )
+  const groupWidth = side + (wide ? gap + panelWidth : 0)
+  const plotX = left + Math.max(0, (availableWidth - groupWidth) / 2)
+  const plotY = top + Math.max(0, (bottom - top - side) / 2)
   return {
     plot: { x: plotX, y: plotY, width: side, height: side },
     wide,
-    panelX: right + 22,
+    panelX: plotX + side + gap,
     panelWidth,
   }
 }
@@ -400,17 +408,6 @@ function drawTrajectories(
   }
 
   ctx.restore()
-
-  AGENT_META.forEach((meta, index) => {
-    const agent = state[meta.key]
-    drawText(
-      ctx,
-      meta.short,
-      mapX(agent.pos.x) + 9,
-      mapY(agent.pos.y) + (index - 1) * 11,
-      { size: 9, weight: 600, color: meta.color },
-    )
-  })
 }
 
 function drawPanel(
@@ -422,6 +419,7 @@ function drawPanel(
 ): void {
   const { panelX, plot } = layoutInfo
   const top = Math.max(plot.y, 64)
+  const rowGap = clamp((plot.height - 90) / AGENT_META.length, 26, 46)
   drawText(ctx, '优化轨迹', panelX, top, {
     size: 10,
     weight: 600,
@@ -430,7 +428,7 @@ function drawPanel(
 
   AGENT_META.forEach((meta, index) => {
     const agent = state[meta.key]
-    const rowY = top + 24 + index * 46
+    const rowY = top + 24 + index * rowGap
     ctx.save()
     ctx.beginPath()
     ctx.arc(panelX + 4, rowY - 3.5, 3.4, 0, Math.PI * 2)
@@ -452,7 +450,9 @@ function drawPanel(
     })
   })
 
-  const infoY = top + 24 + AGENT_META.length * 46 + 10
+  const infoY = top + 24 + AGENT_META.length * rowGap + 10
+  if (infoY + 34 > plot.y + plot.height) return
+
   ctx.save()
   ctx.strokeStyle = CANVAS.frame
   ctx.beginPath()
@@ -501,15 +501,16 @@ function draw(
 
   if (layoutInfo.wide) {
     drawPanel(ctx, state, params, terrain, layoutInfo)
+    drawText(
+      ctx,
+      `收敛判据 |∇L| < 1e-3 · ${state.ticks} 帧`,
+      plot.x,
+      height - 12,
+      { size: 9.5, color: CANVAS.textFaint },
+    )
+  } else {
+    drawLegendRow(ctx, LEGEND, plot.x, height - 12)
   }
-
-  drawText(
-    ctx,
-    `收敛判据 |∇L| < 1e-3 · ${state.ticks} 帧`,
-    plot.x,
-    height - 12,
-    { size: 9.5, color: CANVAS.textFaint },
-  )
 }
 
 export const optimizerLandscape: ExperimentDefinition<OptimizerState> = {

@@ -49,7 +49,7 @@ export function CanvasStage({ canvasRef, onRetry }: CanvasStageProps) {
     <section className="relative min-h-0 flex-1 overflow-hidden bg-surface" aria-label="实验画布">
       <canvas ref={canvasRef} className="block h-full w-full" />
 
-      <div className="pointer-events-none absolute left-[18px] top-[18px] w-[min(430px,calc(100%_-_150px))] rounded-xl border border-line bg-panel/85 px-4 pb-3.5 pt-[13px] shadow-[0_16px_36px_rgba(58,51,43,0.1)] backdrop-blur-md max-[980px]:w-[min(380px,calc(100%_-_36px))] max-[640px]:inset-x-3 max-[640px]:top-3 max-[640px]:w-auto max-[640px]:px-[13px] max-[640px]:py-[11px]">
+      <div className="pointer-events-none absolute left-[18px] top-[18px] w-[min(430px,calc(100%_-_150px))] rounded-xl border border-line bg-panel/85 px-4 pb-3.5 pt-[13px] shadow-[0_16px_36px_rgba(58,51,43,0.1)] backdrop-blur-md max-[980px]:w-[min(380px,calc(100%_-_36px))] max-[640px]:inset-x-3 max-[640px]:top-3 max-[640px]:w-auto max-[640px]:px-[13px] max-[640px]:py-[11px] [@media(max-height:700px)]:hidden">
         <div className="mb-2 flex flex-col gap-[3px]">
           <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-accent-strong">
             {experiment.domain}

@@ -152,3 +152,16 @@ export function drawLegendRow(
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
+
+/**
+ * 图表顶部留白：宽屏时给左上角公式浮窗让位，窄屏时用固定高度避开浮窗。
+ */
+export function plotTopPadding(width: number, height: number): number {
+  if (width >= 680) {
+    // 200/250 是为了避开左上角公式浮窗（含 insight 时更高）。
+    if (height >= 780) return 250
+    if (height >= 540) return 200
+    return 96
+  }
+  return Math.min(118, Math.max(64, height * 0.3))
+}
