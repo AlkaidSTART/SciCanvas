@@ -132,7 +132,7 @@ Text
 ### 模块 F6：本地科研工作区（Local Workspace）【P1】
 
 - 
-- 使用浏览器 IndexedDB（如封装 Dexie.js 或原生）自动保存用户生成过的实验记录、代码版本及最近参数状态。支持重命名、收藏、快速切换和删除，无需后端数据库。
+- 使用浏览器 IndexedDB（如封装 Dexie.js 或原生）作为唯一本地数据库，自动保存用户生成过的实验记录、代码版本及最近参数状态；用户自有的模型 API Key、第三方 API 站点端点等配置也统一存入 IndexedDB，不进入 localStorage、Cookie 或服务端。支持重命名、收藏、快速切换、删除及配置清除，无需后端数据库。
 
 ------
 
@@ -148,7 +148,7 @@ Text
 - **图形与可视化引擎**：2D 物理/数学/粒子仿真：HTML5 Canvas API / SVG3D 曲面/空间轨迹仿真：Three.js（或 React Three Fiber）实时数据折线图表：ECharts（轻量引入折线/散点模块）或自定义高性能 Canvas Sparkline
 - **数学公式排版**：KaTeX（渲染速度快于 MathJax，支持行内/块级公式）
 - **图标库**：Lucide React
-- **大模型接入方案**：通过轻量化 Serverless Edge Function（如 Vercel Edge / Next.js API Route）转发大模型请求；前端设置“内置限时体验额度（用于评委无门槛测试） + 支持用户填写自有 API Key（存于本地 localStorage）”。
+- **大模型接入方案**：通过轻量化 Serverless Edge Function（如 Vercel Edge / Next.js API Route）转发大模型请求；前端设置“内置限时体验额度（用于评委无门槛测试） + 支持用户填写自有 API Key 与第三方 API 站点端点（如 OpenAI 兼容端点）”。用户配置统一保存在浏览器 IndexedDB，界面须显式告知仅存于当前浏览器并提供清除入口；服务端密钥始终只存在于服务端。
 
 ### 5.2 核心数据契约：Generative UI Schema 规范
 

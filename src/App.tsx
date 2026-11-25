@@ -1,68 +1,22 @@
-import { useCallback, useRef, useState } from 'react'
-import './App.css'
+import { useRef } from 'react'
 import { CanvasStage } from './components/CanvasStage'
 import { ControlBar } from './components/ControlBar'
 import { SidePanel } from './components/SidePanel'
 import { TopBar } from './components/TopBar'
-import { DEFAULT_EXPERIMENT } from './experiments'
 import { useExperimentRuntime } from './hooks/useExperimentRuntime'
-import { createDefaultParams, sanitizeParams } from './runtime/params'
-import type { ControlValue, ParamValues } from './types/experiment'
 
 function App() {
-  const experiment = DEFAULT_EXPERIMENT
-  const [params, setParams] = useState<ParamValues>(() => createDefaultParams(experiment))
-  const [speed, setSpeed] = useState(1)
-  const [reloadKey, setReloadKey] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  const runtime = useExperimentRuntime({
-    canvasRef,
-    experiment,
-    params,
-    speed,
-    reloadKey,
-  })
-
-  const handleParamChange = useCallback(
-    (key: string, value: ControlValue) => {
-      setParams((previous) => sanitizeParams(experiment, { ...previous, [key]: value }))
-    },
-    [experiment],
-  )
-
-  const handleResetToDefault = useCallback(() => {
-    setParams(createDefaultParams(experiment))
-    setSpeed(1)
-    setReloadKey((key) => key + 1)
-  }, [experiment])
+  const runtime = useExperimentRuntime(canvasRef)
 
   return (
-    <div className="app-shell">
-      <TopBar title={experiment.title} />
-      <div className="workbench">
-        <SidePanel experiment={experiment} status={runtime.status} />
-        <main className="main-column">
-          <CanvasStage
-            experiment={experiment}
-            canvasRef={canvasRef}
-            status={runtime.status}
-            error={runtime.error}
-            onRetry={runtime.retry}
-            onResetToDefault={handleResetToDefault}
-          />
-          <ControlBar
-            experiment={experiment}
-            params={params}
-            status={runtime.status}
-            speed={speed}
-            disabled={runtime.status === 'error'}
-            onTogglePlay={runtime.toggle}
-            onStep={runtime.step}
-            onReset={runtime.reset}
-            onSpeedChange={setSpeed}
-            onParamChange={handleParamChange}
-          />
+    <div className="flex h-svh flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,198,234,0.22),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(246,209,196,0.18),transparent_60%)]">
+      <TopBar />
+      <div className="grid min-h-0 flex-1 grid-cols-[264px_minmax(0,1fr)] max-[980px]:grid-cols-1 max-[980px]:grid-rows-[auto_minmax(0,1fr)]">
+        <SidePanel />
+        <main className="flex min-h-0 min-w-0 flex-col">
+          <CanvasStage canvasRef={canvasRef} onRetry={runtime.retry} />
+          <ControlBar onTogglePlay={runtime.toggle} onStep={runtime.step} onReset={runtime.reset} />
         </main>
       </div>
     </div>

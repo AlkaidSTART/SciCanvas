@@ -1,79 +1,75 @@
-import type { RuntimeStatus } from '../runtime/CanvasRuntime'
 import { describeControlValue } from '../runtime/params'
-import type {
-  ControlDefinition,
-  ControlValue,
-  ExperimentDefinition,
-  ParamValues,
-} from '../types/experiment'
+import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import type { ControlDefinition, ControlValue } from '../types/experiment'
 import { PauseIcon, PlayIcon, ResetIcon, StepIcon } from './icons'
 
 interface ControlBarProps {
-  experiment: ExperimentDefinition
-  params: ParamValues
-  status: RuntimeStatus
-  speed: number
-  disabled: boolean
   onTogglePlay: () => void
   onStep: () => void
   onReset: () => void
-  onSpeedChange: (speed: number) => void
-  onParamChange: (key: string, value: ControlValue) => void
 }
 
 const SPEED_OPTIONS = [0.5, 1, 2]
 
-export function ControlBar({
-  experiment,
-  params,
-  status,
-  speed,
-  disabled,
-  onTogglePlay,
-  onStep,
-  onReset,
-  onSpeedChange,
-  onParamChange,
-}: ControlBarProps) {
+export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
+  const experiment = useWorkbenchStore((state) => state.experiment)
+  const params = useWorkbenchStore((state) => state.params)
+  const status = useWorkbenchStore((state) => state.status)
+  const speed = useWorkbenchStore((state) => state.speed)
+  const setSpeed = useWorkbenchStore((state) => state.setSpeed)
+  const setParam = useWorkbenchStore((state) => state.setParam)
+
   const running = status === 'running'
+  const disabled = status === 'error'
 
   return (
-    <footer className="control-bar">
-      <div className="transport-row">
-        <div className="transport-group">
+    <footer className="flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#ffffff,#fbfcfe)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px]">
+      <div className="flex flex-wrap items-center gap-3.5 max-[640px]:gap-2.5">
+        <div className="flex items-center gap-2">
           <button
-            className="transport-button is-primary"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-[11px] py-[7px] text-xs text-accent-strong transition-colors enabled:hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onTogglePlay}
             disabled={disabled}
             aria-label={running ? '暂停仿真' : '播放仿真'}
           >
-            {running ? <PauseIcon className="transport-icon" /> : <PlayIcon className="transport-icon" />}
+            {running ? <PauseIcon className="size-[13px] flex-none" /> : <PlayIcon className="size-[13px] flex-none" />}
             <span>{running ? '暂停' : '播放'}</span>
           </button>
           <button
-            className="transport-button"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onStep}
             disabled={disabled}
             aria-label="单步推进一帧"
           >
-            <StepIcon className="transport-icon" />
+            <StepIcon className="size-[13px] flex-none" />
             <span>单步</span>
           </button>
-          <button className="transport-button" type="button" onClick={onReset} aria-label="重置仿真">
-            <ResetIcon className="transport-icon" />
+          <button
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
+            type="button"
+            onClick={onReset}
+            aria-label="重置仿真"
+          >
+            <ResetIcon className="size-[13px] flex-none" />
             <span>重置</span>
           </button>
         </div>
 
-        <div className="speed-group" role="group" aria-label="仿真倍速">
+        <div
+          className="inline-flex rounded-lg border border-line bg-surface-soft p-0.5"
+          role="group"
+          aria-label="仿真倍速"
+        >
           {SPEED_OPTIONS.map((option) => (
             <button
               key={option}
-              className={`speed-button${speed === option ? ' is-active' : ''}`}
+              className={`rounded-md px-[9px] py-1 font-mono text-[11px] transition-colors ${
+                speed === option ? 'bg-accent-soft text-accent-strong' : 'text-ink-faint hover:text-ink-dim'
+              }`}
               type="button"
-              onClick={() => onSpeedChange(option)}
+              onClick={() => setSpeed(option)}
               aria-pressed={speed === option}
             >
               {option}×
@@ -81,17 +77,19 @@ export function ControlBar({
           ))}
         </div>
 
-        <span className="runtime-hint">固定步长 1/120 s · 后台切换自动限幅</span>
+        <span className="ml-auto font-mono text-[10px] text-ink-faint max-[640px]:hidden">
+          固定步长 1/120 s · 后台切换自动限幅
+        </span>
       </div>
 
-      <div className="control-grid">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-x-5 gap-y-2.5 max-[640px]:grid-cols-2 max-[640px]:gap-x-3.5">
         {experiment.controls.map((control) => (
           <ControlField
             key={control.key}
             control={control}
             value={params[control.key]}
             disabled={disabled}
-            onChange={onParamChange}
+            onChange={setParam}
           />
         ))}
       </div>
@@ -112,10 +110,14 @@ function ControlField({ control, value, disabled, onChange }: ControlFieldProps)
   if (control.type === 'slider') {
     const numericValue = typeof value === 'number' ? value : control.default
     return (
-      <div className="control-field">
-        <div className="control-head">
-          <label htmlFor={inputId}>{control.label}</label>
-          <span className="control-value">{describeControlValue(control, numericValue)}</span>
+      <div className="flex min-w-0 flex-col gap-[7px]">
+        <div className="flex items-baseline justify-between gap-3 text-[11px] text-ink-dim">
+          <label className="cursor-pointer" htmlFor={inputId}>
+            {control.label}
+          </label>
+          <span className="whitespace-nowrap font-mono text-[10.5px] tabular-nums text-accent-strong">
+            {describeControlValue(control, numericValue)}
+          </span>
         </div>
         <input
           id={inputId}
@@ -135,35 +137,41 @@ function ControlField({ control, value, disabled, onChange }: ControlFieldProps)
   if (control.type === 'toggle') {
     const checked = value === true
     return (
-      <div className="control-field control-field-tight">
-        <span className="control-head">
-          <label htmlFor={inputId}>{control.label}</label>
-          <span className="control-value">{checked ? '开启' : '关闭'}</span>
+      <div className="flex min-w-0 flex-row items-center gap-3.5">
+        <span className="flex flex-1 items-baseline justify-start gap-2.5 text-[11px] text-ink-dim">
+          <label className="cursor-pointer" htmlFor={inputId}>
+            {control.label}
+          </label>
+          <span className="ml-auto whitespace-nowrap font-mono text-[10.5px] tabular-nums text-ink-faint">
+            {checked ? '开启' : '关闭'}
+          </span>
         </span>
-        <label className="switch" htmlFor={inputId}>
+        <label className="relative inline-flex flex-none cursor-pointer items-center">
           <input
             id={inputId}
+            className="peer sr-only"
             type="checkbox"
             checked={checked}
             disabled={disabled}
             onChange={(event) => onChange(control.key, event.target.checked)}
           />
-          <span className="switch-track">
-            <span className="switch-thumb" />
-          </span>
+          <span className="relative h-5 w-[38px] rounded-full border border-line bg-[rgba(34,55,84,0.14)] transition-colors peer-checked:border-accent-strong/50 peer-checked:bg-accent/40 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-45" />
+          <span className="absolute left-0.5 top-0.5 size-3.5 rounded-full bg-white shadow-[0_1px_3px_rgba(31,45,61,0.18)] transition-all peer-checked:translate-x-[18px] peer-checked:bg-white" />
         </label>
       </div>
     )
   }
 
   return (
-    <div className="control-field">
-      <div className="control-head">
-        <label htmlFor={inputId}>{control.label}</label>
+    <div className="flex min-w-0 flex-col gap-[7px]">
+      <div className="flex items-baseline justify-between gap-3 text-[11px] text-ink-dim">
+        <label className="cursor-pointer" htmlFor={inputId}>
+          {control.label}
+        </label>
       </div>
       <select
         id={inputId}
-        className="select-input"
+        className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs"
         value={String(value)}
         disabled={disabled}
         onChange={(event) => onChange(control.key, event.target.value)}

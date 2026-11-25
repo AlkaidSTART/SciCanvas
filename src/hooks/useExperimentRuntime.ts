@@ -1,20 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
 import { CanvasRuntime } from '../runtime/CanvasRuntime'
-import type { RuntimeErrorInfo, RuntimeStatus } from '../runtime/CanvasRuntime'
-import type { ExperimentDefinition, ParamValues } from '../types/experiment'
-
-interface UseExperimentRuntimeOptions {
-  canvasRef: RefObject<HTMLCanvasElement | null>
-  experiment: ExperimentDefinition
-  params: ParamValues
-  speed: number
-  reloadKey: number
-}
+import { useWorkbenchStore } from '../store/useWorkbenchStore'
 
 export interface ExperimentRuntimeControls {
-  status: RuntimeStatus
-  error: RuntimeErrorInfo | null
   play: () => void
   pause: () => void
   toggle: () => void
@@ -26,15 +15,21 @@ export interface ExperimentRuntimeControls {
 /**
  * 把仿真运行时的生命周期绑定到 React 组件：
  * 画布卸载或实验切换时销毁实例，确保不会叠加动画循环。
+ * 参数、倍速与状态读写都走全局 store，组件无需层层传递。
  */
-export function useExperimentRuntime(options: UseExperimentRuntimeOptions): ExperimentRuntimeControls {
-  const { canvasRef, experiment, params, speed, reloadKey } = options
+export function useExperimentRuntime(
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+): ExperimentRuntimeControls {
+  const experiment = useWorkbenchStore((state) => state.experiment)
+  const params = useWorkbenchStore((state) => state.params)
+  const speed = useWorkbenchStore((state) => state.speed)
+  const reloadKey = useWorkbenchStore((state) => state.reloadKey)
+  const syncStatus = useWorkbenchStore((state) => state.syncStatus)
+  const syncError = useWorkbenchStore((state) => state.syncError)
+
   const runtimeRef = useRef<CanvasRuntime | null>(null)
   const paramsRef = useRef(params)
   const speedRef = useRef(speed)
-
-  const [status, setStatus] = useState<RuntimeStatus>('running')
-  const [error, setError] = useState<RuntimeErrorInfo | null>(null)
 
   useEffect(() => {
     paramsRef.current = params
@@ -48,17 +43,17 @@ export function useExperimentRuntime(options: UseExperimentRuntimeOptions): Expe
     const canvas = canvasRef.current
     if (!canvas) return undefined
 
-    setError(null)
-    setStatus('running')
+    syncError(null)
+    syncStatus('running')
     const runtime = new CanvasRuntime({
       canvas,
       experiment,
       params: paramsRef.current,
       speed: speedRef.current,
-      onStatusChange: setStatus,
+      onStatusChange: syncStatus,
       onError: (info) => {
-        setError(info)
-        setStatus('error')
+        syncError(info)
+        syncStatus('error')
       },
     })
     runtimeRef.current = runtime
@@ -68,7 +63,7 @@ export function useExperimentRuntime(options: UseExperimentRuntimeOptions): Expe
       runtime.destroy()
       runtimeRef.current = null
     }
-  }, [canvasRef, experiment, reloadKey])
+  }, [canvasRef, experiment, reloadKey, syncError, syncStatus])
 
   useEffect(() => {
     runtimeRef.current?.setParams(params)
@@ -95,17 +90,17 @@ export function useExperimentRuntime(options: UseExperimentRuntimeOptions): Expe
   }, [])
 
   const reset = useCallback(() => {
-    setError(null)
+    syncError(null)
     runtimeRef.current?.reset()
-  }, [])
+  }, [syncError])
 
   const retry = useCallback(() => {
-    setError(null)
+    syncError(null)
     const runtime = runtimeRef.current
     if (!runtime) return
     runtime.reset()
     runtime.start()
-  }, [])
+  }, [syncError])
 
-  return { status, error, play, pause, toggle, step, reset, retry }
+  return { play, pause, toggle, step, reset, retry }
 }

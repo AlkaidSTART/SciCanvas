@@ -24,15 +24,21 @@ const MAX_TRAIL = 600
 const TRAIL_SAMPLE_INTERVAL = 2
 
 const COLORS = {
-  background: '#0B0F17',
-  grid: 'rgba(148, 163, 184, 0.07)',
-  axis: 'rgba(148, 163, 184, 0.28)',
-  text: '#94A3B8',
-  textStrong: '#E2E8F0',
-  accent: '#38BDF8',
-  accentSoft: 'rgba(56, 189, 248, 0.35)',
-  accentFill: 'rgba(56, 189, 248, 0.14)',
-  amber: '#F59E0B',
+  background: '#FFFFFF',
+  grid: 'rgba(49, 78, 114, 0.055)',
+  axis: 'rgba(49, 78, 114, 0.26)',
+  text: '#6B7889',
+  textStrong: '#26313F',
+  accent: '#5C8CBF',
+  accentSoft: 'rgba(92, 140, 191, 0.5)',
+  accentFill: 'rgba(126, 168, 214, 0.18)',
+  spring: '#6FB59A',
+  amber: '#D9A24A',
+  amberText: '#A9752A',
+  wall: 'rgba(90, 110, 136, 0.5)',
+  guide: 'rgba(90, 110, 136, 0.3)',
+  faint: 'rgba(90, 110, 136, 0.22)',
+  halo: 'rgba(92, 140, 191, 0.15)',
 }
 
 function readNumber(params: ParamValues, key: string, fallback: number): number {
@@ -161,7 +167,7 @@ function drawSpring(
   const coils = 16
   const amplitude = Math.min(14, span * 0.18)
   ctx.save()
-  ctx.strokeStyle = COLORS.accent
+  ctx.strokeStyle = COLORS.spring
   ctx.lineWidth = 1.4
   ctx.beginPath()
   ctx.moveTo(startX, centerY)
@@ -184,7 +190,7 @@ function drawOscillator(
   width: number,
   height: number,
 ): void {
-  const centerY = height * 0.5
+  const centerY = height * 0.56
   const wallX = Math.max(28, width * 0.07)
   const padRight = 44
   const available = Math.max(120, width - wallX - padRight)
@@ -199,7 +205,7 @@ function drawOscillator(
 
   // 墙面
   ctx.save()
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)'
+  ctx.strokeStyle = COLORS.wall
   ctx.lineWidth = 2
   ctx.beginPath()
   ctx.moveTo(wallX, centerY - 76)
@@ -216,7 +222,7 @@ function drawOscillator(
 
   // 平衡位置参考线
   ctx.save()
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)'
+  ctx.strokeStyle = COLORS.guide
   ctx.setLineDash([4, 7])
   ctx.beginPath()
   ctx.moveTo(equilibriumX, centerY - 100)
@@ -231,6 +237,9 @@ function drawOscillator(
   ctx.fillStyle = COLORS.accentFill
   ctx.strokeStyle = COLORS.accent
   ctx.lineWidth = 1.5
+  ctx.shadowColor = 'rgba(31, 45, 61, 0.12)'
+  ctx.shadowBlur = 14
+  ctx.shadowOffsetY = 4
   ctx.beginPath()
   if (typeof ctx.roundRect === 'function') {
     ctx.roundRect(massLeft, massTop, massSize, massSize, 11)
@@ -239,6 +248,9 @@ function drawOscillator(
   }
   ctx.fill()
   ctx.stroke()
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
   ctx.beginPath()
   ctx.arc(massX, centerY, 4, 0, Math.PI * 2)
   ctx.fillStyle = COLORS.accent
@@ -261,7 +273,7 @@ function drawOscillator(
   drawArrow(ctx, massX, arrowY, massX + arrowLength, arrowY, COLORS.amber)
   drawText(ctx, `F(t) = ${drive.toFixed(2)} N`, massX, arrowY + 20, {
     align: 'center',
-    color: COLORS.amber,
+    color: COLORS.amberText,
     size: 10,
   })
 
@@ -303,7 +315,7 @@ function drawPhasePortrait(
   ctx.stroke()
 
   // 坐标轴
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)'
+  ctx.strokeStyle = COLORS.faint
   ctx.beginPath()
   ctx.moveTo(centerX - halfW - 8, centerY)
   ctx.lineTo(centerX + halfW + 8, centerY)
@@ -337,7 +349,7 @@ function drawPhasePortrait(
   ctx.save()
   ctx.beginPath()
   ctx.arc(currentX, currentY, 7, 0, Math.PI * 2)
-  ctx.fillStyle = 'rgba(56, 189, 248, 0.18)'
+  ctx.fillStyle = COLORS.halo
   ctx.fill()
   ctx.beginPath()
   ctx.arc(currentX, currentY, 3, 0, Math.PI * 2)
