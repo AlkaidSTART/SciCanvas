@@ -150,3 +150,14 @@
     cursor: not-allowed;
   }
 }
+
+/* 画布高度不足时让出空间给图表：公式浮窗与图表留白使用同一阈值。 */
+.canvas-stage {
+  container-type: size;
+}
+
+@container (max-height: 600px) {
+  .formula-overlay {
+    display: none;
+  }
+}

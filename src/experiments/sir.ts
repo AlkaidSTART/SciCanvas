@@ -283,37 +283,9 @@ function drawPanel(
 
   drawText(ctx, '传播指标', x, top, { size: 10, weight: 600, color: CANVAS.textStrong })
 
-  const rows: Array<[string, string]> = [
-    ['R₀', r0.toFixed(1)],
-    ['β = R₀γ', `${(r0 * gamma).toFixed(2)} /天`],
-    ['γ 恢复率', `${gamma.toFixed(2)} /天`],
-    ['免疫阈值', r0 > 1 ? `${(threshold * 100).toFixed(1)}%` : '不适用'],
-    ['感染峰值', `${(state.peakI * 100).toFixed(1)}%`],
-    ['峰值时刻', `${state.peakT.toFixed(0)} 天`],
-    ['当前时间', `${state.t.toFixed(0)} 天`],
-  ]
-  rows.forEach(([label, value], index) => {
-    const rowY = top + 24 + index * 18
-    drawText(ctx, label, x, rowY, { size: 9.5, color: CANVAS.text })
-    drawText(ctx, value, x + width, rowY, {
-      size: 9.5,
-      color: CANVAS.textStrong,
-      align: 'right',
-    })
-  })
-
-  const barY = top + 24 + rows.length * 18 + 12
-  ctx.save()
-  ctx.strokeStyle = CANVAS.frame
-  ctx.beginPath()
-  ctx.moveTo(x, barY - 14)
-  ctx.lineTo(x + width, barY - 14)
-  ctx.stroke()
-  ctx.restore()
-  drawText(ctx, '当前占比', x, barY, { size: 9.5, color: CANVAS.text })
-
-  const barHeight = 9
-  const barTop = barY + 10
+  // 当前占比放在最上方，避免窗口较矮时被裁剪。
+  const barTop = top + 14
+  const barHeight = 8
   let cursor = x
   const segments: Array<{ value: number; color: string }> = [
     { value: state.s, color: CANVAS.blue },
@@ -335,10 +307,38 @@ function drawPanel(
     drawText(
       ctx,
       `${series.key.toUpperCase()} ${(state[series.key] * 100).toFixed(1)}%`,
-      x,
-      barTop + 26 + index * 15,
-      { size: 9, color: series.color },
+      x + index * 56,
+      barTop + 24,
+      { size: 8.5, color: series.color },
     )
+  })
+
+  const dividerY = barTop + 38
+  ctx.save()
+  ctx.strokeStyle = CANVAS.frame
+  ctx.beginPath()
+  ctx.moveTo(x, dividerY)
+  ctx.lineTo(x + width, dividerY)
+  ctx.stroke()
+  ctx.restore()
+
+  const rows: Array<[string, string]> = [
+    ['R₀', r0.toFixed(1)],
+    ['β = R₀γ', `${(r0 * gamma).toFixed(2)} /天`],
+    ['γ 恢复率', `${gamma.toFixed(2)} /天`],
+    ['免疫阈值', r0 > 1 ? `${(threshold * 100).toFixed(1)}%` : '不适用'],
+    ['感染峰值', `${(state.peakI * 100).toFixed(1)}%`],
+    ['峰值时刻', `${state.peakT.toFixed(0)} 天`],
+    ['当前时间', `${state.t.toFixed(0)} 天`],
+  ]
+  rows.forEach(([label, value], index) => {
+    const rowY = dividerY + 18 + index * 17
+    drawText(ctx, label, x, rowY, { size: 9.5, color: CANVAS.text })
+    drawText(ctx, value, x + width, rowY, {
+      size: 9.5,
+      color: CANVAS.textStrong,
+      align: 'right',
+    })
   })
 }
 

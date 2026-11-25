@@ -157,11 +157,12 @@ export function clamp(value: number, min: number, max: number): number {
  * 图表顶部留白：宽屏时给左上角公式浮窗让位，窄屏时用固定高度避开浮窗。
  */
 export function plotTopPadding(width: number, height: number): number {
+  // 画布高度 < 600 时公式浮窗由容器查询隐藏，图表可以贴着顶部开始。
+  if (height < 600) return 28
   if (width >= 680) {
-    // 200/250 是为了避开左上角公式浮窗（含 insight 时更高）。
+    // 200/250 是为含 insight 的公式浮窗留出的空间。
     if (height >= 780) return 250
-    if (height >= 540) return 200
-    return 96
+    return 200
   }
-  return Math.min(118, Math.max(64, height * 0.3))
+  return 118
 }
