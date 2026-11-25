@@ -71,3 +71,19 @@ export function describeControlValue(control: ControlDefinition, value: ControlV
     : undefined
   return option ? option.label : String(value)
 }
+
+/** 模型绘制/推演时读取参数的安全兜底，参数已被 sanitize，这里只防御意外调用。 */
+export function readNumberParam(params: ParamValues, key: string, fallback: number): number {
+  const value = params[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+export function readStringParam(params: ParamValues, key: string, fallback: string): string {
+  const value = params[key]
+  return typeof value === 'string' ? value : fallback
+}
+
+export function readBooleanParam(params: ParamValues, key: string, fallback: boolean): boolean {
+  const value = params[key]
+  return typeof value === 'boolean' ? value : fallback
+}

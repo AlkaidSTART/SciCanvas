@@ -40,6 +40,13 @@ export interface Viewport {
   height: number
 }
 
+/** 画布内的视觉图例，和模型绘制使用同一份颜色定义，避免说明与画面不一致。 */
+export interface LegendItem {
+  label: string
+  color: string
+  dashed?: boolean
+}
+
 /**
  * 仿真模型的统一生命周期契约。M3 生成的外部代码需要实现同一组接口，
  * 运行时只依赖这四个方法，不关心模型内部如何组织状态。
@@ -63,6 +70,7 @@ export interface ExperimentDefinition<S = unknown> {
   insight: string
   renderType: RenderType
   controls: ControlDefinition[]
+  legend?: LegendItem[]
   model: SimulationModel<S>
 }
 
@@ -187,6 +195,20 @@ export function validateExperiment(input: unknown): ValidationResult {
 
   if (input.renderType !== 'canvas2d') {
     issues.push('renderType 目前仅支持 "canvas2d"')
+  }
+
+  if (input.legend !== undefined) {
+    if (!Array.isArray(input.legend) || input.legend.length === 0) {
+      issues.push('legend 必须是非空数组')
+    } else {
+      input.legend.forEach((item, index) => {
+        if (!isRecord(item) || !isNonEmptyString(item.label) || !isNonEmptyString(item.color)) {
+          issues.push(`legend[${index}] 必须包含非空的 label 与 color`)
+        } else if (item.dashed !== undefined && typeof item.dashed !== 'boolean') {
+          issues.push(`legend[${index}].dashed 必须是布尔值`)
+        }
+      })
+    }
   }
 
   const controls: ControlDefinition[] = []
