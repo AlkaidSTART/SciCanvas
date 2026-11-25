@@ -1,4 +1,22 @@
+import type { ControlValue } from '../types/experiment'
+import type { RepairDiagnostic } from './heal'
+import type { GeneratedExperimentSpec } from './schema'
+
+export type { RepairDiagnostic, RepairStage } from './heal'
+
 export const MAX_PROMPT_LENGTH = 4000
+export const DEFAULT_REPAIR_INSTRUCTION =
+  '请修复当前实验的运行错误，保持原有教学意图、交互控件与视觉风格。'
+
+export type GenerationMode = 'create' | 'refine' | 'repair'
+
+export interface GenerationInput {
+  prompt: string
+  mode?: GenerationMode
+  currentSpec?: GeneratedExperimentSpec
+  currentParams?: Record<string, ControlValue>
+  diagnostic?: RepairDiagnostic
+}
 
 export interface ChatMessage {
   role: 'system' | 'user'
@@ -35,9 +53,49 @@ export const SYSTEM_PROMPT = `你是 SciCanvas 的科学实验生成器。用户
 6. 画面使用米白底色（#FBF7EF）上的低饱和蓝、橙、绿、紫线条，文字默认使用深棕色 #7D7062。
 7. 所有面向用户的文案使用简体中文。`
 
-export function buildGenerationMessages(prompt: string): ChatMessage[] {
+const MODE_INSTRUCTIONS: Record<GenerationMode, string> = {
+  create: '',
+  refine: `
+
+本次请求是增量修改。请在保留当前实验结构、控件 key 与教学意图的前提下，只落实用户指令要求的改动；未要求修改的部分尽量保持一致。输出仍然是完整 schema，不要复述旧代码，也不要解释过程。`,
+  repair: `
+
+本次请求是错误修复。当前实验在隔离沙盒中运行失败。请根据最小诊断信息定位并修正 simulationCode（必要时修正相关 schema 字段），保持控件 key、标题与教学意图不变。输出仍然是完整 schema，只返回 JSON。`,
+}
+
+function buildUserContent(input: GenerationInput, mode: GenerationMode): string {
+  if (mode === 'create') return input.prompt.trim()
+  if (mode === 'refine') {
+    return JSON.stringify(
+      {
+        instruction: input.prompt.trim(),
+        currentSpec: input.currentSpec,
+        currentParams: input.currentParams ?? {},
+      },
+      null,
+      2,
+    )
+  }
+  return JSON.stringify(
+    {
+      instruction: input.prompt.trim() || DEFAULT_REPAIR_INSTRUCTION,
+      diagnostic: input.diagnostic,
+      currentSpec: input.currentSpec,
+    },
+    null,
+    2,
+  )
+}
+
+/**
+ * 按生成模式组装消息：创建只发送用户描述；微调与修复只附带当前 Schema、
+ * 必要参数或最小诊断，不携带历史对话与任何服务端信息。
+ */
+export function buildGenerationMessages(input: string | GenerationInput): ChatMessage[] {
+  const request: GenerationInput = typeof input === 'string' ? { prompt: input } : input
+  const mode = request.mode ?? 'create'
   return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: prompt.trim() },
+    { role: 'system', content: `${SYSTEM_PROMPT}${MODE_INSTRUCTIONS[mode]}` },
+    { role: 'user', content: buildUserContent(request, mode) },
   ]
 }

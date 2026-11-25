@@ -55,6 +55,34 @@ function readRate(params: ParamValues): number {
   return clamp(readNumberParam(params, 'gamma', 0.2), 0.02, 1)
 }
 
+/** 横轴上限：随当前时间扩展，并限制在流行病学总窗口内。 */
+function timelineMax(current: number): number {
+  return Math.max(30, Math.min(MAX_DAYS, Math.ceil((current * 1.08) / 10) * 10))
+}
+
+/** 在历史曲线上按时间线性插值，供悬停探针读取任意时刻的局部值。 */
+function sampleHistoryAt(history: SirSample[], t: number): SirSample | null {
+  if (history.length === 0) return null
+  if (t < history[0].t) return null
+  const last = history[history.length - 1]
+  if (t > last.t) return null
+  for (let index = 1; index < history.length; index += 1) {
+    const next = history[index]
+    if (next.t >= t) {
+      const previous = history[index - 1]
+      const span = next.t - previous.t
+      const ratio = span > 0 ? (t - previous.t) / span : 0
+      return {
+        t,
+        s: previous.s + (next.s - previous.s) * ratio,
+        i: previous.i + (next.i - previous.i) * ratio,
+        r: previous.r + (next.r - previous.r) * ratio,
+      }
+    }
+  }
+  return last
+}
+
 function createState(params: ParamValues): SirState {
   const initial = clamp(readNumberParam(params, 'i0', 0.01), 0.0005, 0.2)
   return {
@@ -143,7 +171,7 @@ function drawChart(
 ): void {
   const { plot } = chart
   const yMax = clamp(Math.max(0.12, state.peakI * 1.2, state.i * 1.2), 0.1, 1)
-  const tMax = Math.max(30, Math.min(MAX_DAYS, Math.ceil((state.t * 1.08) / 10) * 10))
+  const tMax = timelineMax(state.t)
   const mapX = (t: number): number => plot.x + (t / tMax) * plot.width
   const mapY = (value: number): number => plot.y + plot.height - (value / yMax) * plot.height
 
@@ -408,6 +436,63 @@ export const sirEpidemic: ExperimentDefinition<SirState> = {
     },
   ],
   legend: LEGEND,
+  cornerCases: [
+    {
+      id: 'subcritical',
+      label: '亚临界 R₀ < 1',
+      description: '有效传播数低于 1，感染单调衰减，不形成峰值。',
+      params: { r0: 0.9, gamma: 0.2 },
+    },
+    {
+      id: 'typical',
+      label: '典型传播 R₀ = 3',
+      description: '感染曲线先升后降，跌破群体免疫阈值后回落。',
+      params: { r0: 3, gamma: 0.2, i0: 0.01 },
+    },
+    {
+      id: 'supercritical',
+      label: '超级传播 R₀ = 6',
+      description: '极高传播数让绝大多数人群被感染，峰值更早更高。',
+      params: { r0: 6, gamma: 0.2 },
+    },
+  ],
+  telemetry: {
+    metrics: [
+      { key: 'infected', label: '感染占比 I', unit: '%', color: CANVAS.peach, precision: 1 },
+      { key: 'rEff', label: '有效传播数 Rₑ', color: CANVAS.amber, precision: 2 },
+    ],
+    capacity: 200,
+    interval: 0.1,
+    sample: (state, params) => ({
+      infected: state.i * 100,
+      rEff: clamp(readNumberParam(params, 'r0', 3), 0, 10) * state.s,
+    }),
+  },
+  probe: {
+    hint: '悬停在曲线上查看该时刻的感染占比',
+    read: (state, _params, point, viewport) => {
+      const chart = layout(viewport.width, viewport.height)
+      const { plot } = chart
+      if (
+        point.x < plot.x ||
+        point.x > plot.x + plot.width ||
+        point.y < plot.y ||
+        point.y > plot.y + plot.height
+      ) {
+        return null
+      }
+      const tMax = timelineMax(state.t)
+      const t = ((point.x - plot.x) / plot.width) * tMax
+      const sample = sampleHistoryAt(state.history, t)
+      if (!sample) return null
+      return {
+        position: `t = ${sample.t.toFixed(1)} 天`,
+        label: '感染占比 I',
+        value: `${(sample.i * 100).toFixed(1)}%`,
+        detail: `易感 S ${(sample.s * 100).toFixed(1)}% · 移除 R ${(sample.r * 100).toFixed(1)}%`,
+      }
+    },
+  },
   model: {
     createState,
     step,

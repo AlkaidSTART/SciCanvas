@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createDefaultParams } from '../runtime/params'
+import { createDefaultParams, sanitizeParams } from '../runtime/params'
 import type { ExperimentDefinition, ParamValues, Viewport } from '../types/experiment'
 import { EXPERIMENTS, DEFAULT_EXPERIMENT_ID, getExperimentById } from './index'
 import { dampedOscillator } from './dampedOscillator'
@@ -52,11 +52,11 @@ function expectFiniteNumbers(value: unknown, path = 'state'): void {
   }
 }
 
-function runSteps(
-  experiment: ExperimentDefinition,
+function runSteps<S>(
+  experiment: ExperimentDefinition<S>,
   params: ParamValues,
   steps: number,
-): unknown {
+): S {
   let state = experiment.model.createState(params)
   for (let index = 0; index < steps; index += 1) {
     state = experiment.model.step(state, params, FIXED_STEP)
@@ -198,4 +198,62 @@ describe('阻尼振动案例', () => {
     const maxDisplacement = Math.max(...state.trail.map((point) => Math.abs(point.x)))
     expect(maxDisplacement).toBeGreaterThan(1)
   })
+})
+
+describe('M5 边界态、遥测与探针', () => {
+  const withCornerCases = EXPERIMENTS.filter(
+    (experiment) => (experiment.cornerCases?.length ?? 0) > 0,
+  )
+  const withTelemetry = EXPERIMENTS.filter((experiment) => experiment.telemetry)
+  const withProbe = EXPERIMENTS.filter((experiment) => experiment.probe)
+  const CENTER = { x: 450, y: 320 }
+
+  it('至少两个预设具备完整探索能力，其余明确降级', () => {
+    expect(withCornerCases).toHaveLength(EXPERIMENTS.length)
+    expect(withTelemetry.length).toBeGreaterThanOrEqual(2)
+    expect(withProbe.length).toBeGreaterThanOrEqual(2)
+    expect(dampedOscillator.probe).toBeUndefined()
+    expect(fourierSquareWave.telemetry).toBeUndefined()
+  })
+
+  for (const experiment of withCornerCases) {
+    describe(`${experiment.title} 边界态`, () => {
+      it('声明的参数都合法且能稳定推进', () => {
+        const base = createDefaultParams(experiment)
+        for (const cornerCase of experiment.cornerCases ?? []) {
+          const params = sanitizeParams(experiment, { ...base, ...cornerCase.params })
+          for (const [key, value] of Object.entries(cornerCase.params)) {
+            expect(params[key], `${cornerCase.label}.${key}`).toBe(value)
+          }
+          const state = runSteps(experiment, params, 240)
+          expectFiniteNumbers(state)
+        }
+      })
+    })
+  }
+
+  for (const experiment of withTelemetry) {
+    it(`${experiment.title} 遥测采样覆盖声明的每个指标`, () => {
+      const params = createDefaultParams(experiment)
+      const state = runSteps(experiment, params, 240)
+      const values = experiment.telemetry?.sample(state, params, 2)
+      expect(values).toBeDefined()
+      for (const metric of experiment.telemetry?.metrics ?? []) {
+        expect(typeof values?.[metric.key], metric.key).toBe('number')
+        expect(Number.isFinite(values?.[metric.key]), metric.key).toBe(true)
+      }
+    })
+  }
+
+  for (const experiment of withProbe) {
+    it(`${experiment.title} 探针在有效区域返回读数、区域外返回 null`, () => {
+      const params = createDefaultParams(experiment)
+      const state = runSteps(experiment, params, 900)
+      const reading = experiment.probe?.read(state, params, CENTER, VIEWPORT)
+      expect(reading).not.toBeNull()
+      expect(reading?.position.length).toBeGreaterThan(0)
+      expect(reading?.value.length).toBeGreaterThan(0)
+      expect(experiment.probe?.read(state, params, { x: 1, y: 1 }, VIEWPORT)).toBeNull()
+    })
+  }
 })

@@ -1,14 +1,27 @@
-import type { ExperimentDefinition, ParamValues, Viewport } from '../types/experiment'
+import type {
+  ExperimentDefinition,
+  ParamValues,
+  ProbePoint,
+  ProbeReading,
+  TelemetrySample,
+  Viewport,
+} from '../types/experiment'
 import { validateExperiment } from '../types/experiment'
 import { createDefaultParams, sanitizeParams } from './params'
 
 export type RuntimeStatus = 'running' | 'paused' | 'error'
 
-export type RuntimeErrorScope = 'init' | 'step' | 'draw'
+export type RuntimeErrorScope = 'init' | 'first-frame' | 'step' | 'draw'
 
 export interface RuntimeErrorInfo {
   scope: RuntimeErrorScope
   message: string
+}
+
+/** 悬停探针读数与指针位置（CSS 像素，相对画布左上角）。 */
+export interface ProbeReadout {
+  point: ProbePoint
+  reading: ProbeReading
 }
 
 export interface RuntimeSnapshot<S> {
@@ -29,6 +42,10 @@ export interface CanvasRuntimeOptions<S = unknown> {
   cancelFrame?: (handle: number) => void
   onStatusChange?: (status: RuntimeStatus) => void
   onError?: (error: RuntimeErrorInfo) => void
+  /** 有界遥测缓存快照；仅在实验声明 telemetry 时触发。 */
+  onTelemetry?: (samples: TelemetrySample[]) => void
+  /** 指针离开画布、探针读数失效时传 null。 */
+  onProbe?: (readout: ProbeReadout | null) => void
 }
 
 /** 单帧最多消化的真实时间，避免切后台回来 dt 过大导致状态爆炸。 */
@@ -38,6 +55,19 @@ const MAX_STEPS_PER_FRAME = 24
 const DEFAULT_FIXED_STEP = 1 / 120
 const MIN_SPEED = 0.25
 const MAX_SPEED = 4
+
+/** 遥测缓存与采样间隔的硬上限，防止声明异常时无限增长。 */
+const MIN_TELEMETRY_CAPACITY = 2
+const MAX_TELEMETRY_CAPACITY = 600
+const DEFAULT_TELEMETRY_CAPACITY = 180
+const DEFAULT_TELEMETRY_INTERVAL = 0.1
+/** 浮层刷新节流：高频动画下避免每个仿真步都触发 React 更新。 */
+const TELEMETRY_EMIT_INTERVAL = 90
+const PROBE_EMIT_INTERVAL = 60
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now()
+}
 
 function defaultRequestFrame(callback: FrameRequestCallback): number {
   if (typeof requestAnimationFrame === 'function') {
@@ -77,6 +107,8 @@ export class CanvasRuntime<S = unknown> {
   private readonly cancelFrame: (handle: number) => void
   private readonly onStatusChange?: (status: RuntimeStatus) => void
   private readonly onError?: (error: RuntimeErrorInfo) => void
+  private readonly onTelemetry?: (samples: TelemetrySample[]) => void
+  private readonly onProbe?: (readout: ProbeReadout | null) => void
   private readonly fixedStep: number
 
   private ctx: CanvasRenderingContext2D | null = null
@@ -94,6 +126,16 @@ export class CanvasRuntime<S = unknown> {
   private simTime = 0
   private steps = 0
 
+  private telemetrySamples: TelemetrySample[] = []
+  private lastTelemetrySampleAt = Number.NEGATIVE_INFINITY
+  private lastTelemetryEmitAt = Number.NEGATIVE_INFINITY
+  private telemetryBroken = false
+
+  private pointer: ProbePoint | null = null
+  private probeVisible = false
+  private lastProbeEmitAt = Number.NEGATIVE_INFINITY
+  private probeAttached = false
+
   private resizeObserver: ResizeObserver | null = null
   private readonly handleVisibility = (): void => {
     // 无论进入还是离开后台，都把时间基准置空，恢复后的第一帧 dt 记 0。
@@ -108,6 +150,8 @@ export class CanvasRuntime<S = unknown> {
     this.cancelFrame = options.cancelFrame ?? defaultCancelFrame
     this.onStatusChange = options.onStatusChange
     this.onError = options.onError
+    this.onTelemetry = options.onTelemetry
+    this.onProbe = options.onProbe
     this.fixedStep = options.fixedStep ?? DEFAULT_FIXED_STEP
     this.speed = normalizeSpeed(options.speed ?? 1)
     this.params = sanitizeParams(
@@ -137,10 +181,14 @@ export class CanvasRuntime<S = unknown> {
       return
     }
 
+    this.sampleTelemetry(true)
+    this.attachProbe()
+
     if (options.autoResize !== false) {
       this.attachResizeObserver()
     }
     this.render()
+    this.emitTelemetry(true)
   }
 
   start(): void {
@@ -177,6 +225,8 @@ export class CanvasRuntime<S = unknown> {
     if (this.getStatus() === 'error') return
     this.setStatus('paused')
     this.render()
+    this.updateProbe(true)
+    this.emitTelemetry(true)
   }
 
   /** 回到初始状态（保留当前参数），并停在暂停态。 */
@@ -188,14 +238,20 @@ export class CanvasRuntime<S = unknown> {
     this.accumulator = 0
     this.simTime = 0
     this.steps = 0
+    this.telemetrySamples = []
+    this.lastTelemetrySampleAt = Number.NEGATIVE_INFINITY
+    this.telemetryBroken = false
     try {
       this.state = this.experiment.model.createState(this.params)
     } catch (error) {
       this.fail('init', error)
       return
     }
+    this.sampleTelemetry(true)
     this.setStatus('paused')
     this.render()
+    this.updateProbe(true)
+    this.emitTelemetry(true)
   }
 
   setParams(params: ParamValues): void {
@@ -203,6 +259,8 @@ export class CanvasRuntime<S = unknown> {
     this.params = sanitizeParams(this.experiment, params)
     if (!this.running && this.status !== 'error') {
       this.render()
+      // 暂停时手动改参数也要刷新探针，否则读数会停在旧状态。
+      this.updateProbe(true)
     }
   }
 
@@ -230,6 +288,7 @@ export class CanvasRuntime<S = unknown> {
     this.cancelScheduled()
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+    this.detachProbe()
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.handleVisibility)
     }
@@ -269,6 +328,7 @@ export class CanvasRuntime<S = unknown> {
     }
 
     this.render()
+    this.emitTelemetry()
     if (this.status !== 'error') {
       this.schedule()
     }
@@ -282,7 +342,9 @@ export class CanvasRuntime<S = unknown> {
       this.steps += 1
     } catch (error) {
       this.fail('step', error)
+      return
     }
+    this.sampleTelemetry()
   }
 
   private render(): void {
@@ -293,11 +355,121 @@ export class CanvasRuntime<S = unknown> {
       this.experiment.model.draw(this.ctx, this.state, this.params, this.viewport)
     } catch (error) {
       this.fail('draw', error)
+      return
+    }
+    this.updateProbe(false)
+  }
+
+  /**
+   * 按仿真时间间隔采样遥测，缓存长度由实验声明并限制在安全范围内。
+   * 采样异常只停用遥测，不影响主仿真。
+   */
+  private sampleTelemetry(force = false): void {
+    const telemetry = this.experiment.telemetry
+    if (!telemetry || this.state === undefined || this.telemetryBroken) return
+
+    const interval =
+      typeof telemetry.interval === 'number' && telemetry.interval > 0
+        ? telemetry.interval
+        : DEFAULT_TELEMETRY_INTERVAL
+    if (!force && this.simTime - this.lastTelemetrySampleAt < interval - 1e-9) return
+
+    try {
+      const raw = telemetry.sample(this.state, this.params, this.simTime)
+      const values: Record<string, number> = {}
+      for (const metric of telemetry.metrics) {
+        const value = raw[metric.key]
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          values[metric.key] = value
+        }
+      }
+      this.telemetrySamples.push({ t: this.simTime, values })
+      const capacity = Math.min(
+        MAX_TELEMETRY_CAPACITY,
+        Math.max(
+          MIN_TELEMETRY_CAPACITY,
+          Math.floor(telemetry.capacity ?? DEFAULT_TELEMETRY_CAPACITY),
+        ),
+      )
+      while (this.telemetrySamples.length > capacity) this.telemetrySamples.shift()
+      this.lastTelemetrySampleAt = this.simTime
+    } catch {
+      this.telemetryBroken = true
+      this.telemetrySamples = []
     }
   }
 
-  private measure(): void {
-    if (!this.ctx) return
+  private emitTelemetry(force = false): void {
+    if (!this.experiment.telemetry || !this.onTelemetry) return
+    const now = nowMs()
+    if (!force && now - this.lastTelemetryEmitAt < TELEMETRY_EMIT_INTERVAL) return
+    this.lastTelemetryEmitAt = now
+    this.onTelemetry(this.telemetrySamples.slice())
+  }
+
+  private attachProbe(): void {
+    if (!this.experiment.probe || this.probeAttached) return
+    if (typeof this.canvas.addEventListener !== 'function') return
+    this.canvas.addEventListener('pointermove', this.handlePointerMove)
+    this.canvas.addEventListener('pointerleave', this.handlePointerLeave)
+    this.canvas.addEventListener('pointercancel', this.handlePointerLeave)
+    this.probeAttached = true
+  }
+
+  private detachProbe(): void {
+    if (!this.probeAttached) return
+    if (typeof this.canvas.removeEventListener === 'function') {
+      this.canvas.removeEventListener('pointermove', this.handlePointerMove)
+      this.canvas.removeEventListener('pointerleave', this.handlePointerLeave)
+      this.canvas.removeEventListener('pointercancel', this.handlePointerLeave)
+    }
+    this.probeAttached = false
+  }
+
+  private readonly handlePointerMove = (event: PointerEvent): void => {
+    if (this.destroyed || this.status === 'error') return
+    // 触屏没有悬停语义，直接降级为不显示探针。
+    if (event.pointerType && event.pointerType !== 'mouse') return
+    const rect = this.canvas.getBoundingClientRect()
+    this.pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    this.updateProbe(true)
+  }
+
+  private readonly handlePointerLeave = (): void => {
+    if (this.destroyed) return
+    this.pointer = null
+    this.probeVisible = false
+    this.onProbe?.(null)
+  }
+
+  /** point 与 viewport 都是 CSS 像素坐标，DPR 只影响画布位图，不影响读数。 */
+  private updateProbe(force: boolean): void {
+    const probe = this.experiment.probe
+    if (!probe || this.state === undefined || !this.pointer || this.status === 'error') return
+
+    const now = nowMs()
+    if (!force && now - this.lastProbeEmitAt < PROBE_EMIT_INTERVAL) return
+    this.lastProbeEmitAt = now
+
+    let reading: ProbeReading | null = null
+    try {
+      reading = probe.read(this.state, this.params, this.pointer, this.viewport)
+    } catch {
+      reading = null
+    }
+
+    if (!reading) {
+      if (this.probeVisible) {
+        this.probeVisible = false
+        this.onProbe?.(null)
+      }
+      return
+    }
+    this.probeVisible = true
+    this.onProbe?.({ point: { ...this.pointer }, reading })
+  }
+
+  private measure(): void {    if (!this.ctx) return
     const rect = this.canvas.getBoundingClientRect()
     const width = Math.max(1, Math.round(rect.width || this.canvas.clientWidth || this.canvas.width || 1))
     const height = Math.max(1, Math.round(rect.height || this.canvas.clientHeight || this.canvas.height || 1))

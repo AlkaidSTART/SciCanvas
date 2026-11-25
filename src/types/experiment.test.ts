@@ -94,3 +94,103 @@ describe('validateExperiment', () => {
     expect(() => assertValidExperiment(makeExperiment({ id: '' }))).toThrowError(/校验失败/)
   })
 })
+
+describe('M5 探索能力 Schema', () => {
+  const cornerCases = [
+    { id: 'high', label: '高增益', description: '观察上限行为', params: { gain: 9 } },
+  ]
+
+  it('接受带边界态、遥测与探针的完整定义', () => {
+    const result = validateExperiment(
+      makeExperiment({
+        cornerCases,
+        telemetry: {
+          metrics: [{ key: 'value', label: '状态值', color: '#4F7292', precision: 2 }],
+          capacity: 120,
+          interval: 0.1,
+          sample: () => ({ value: 1 }),
+        },
+        probe: {
+          hint: '悬停查看',
+          read: () => ({ position: 'x = 0', label: '值', value: '1.000' }),
+        },
+      }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('拒绝未声明的边界态参数键', () => {
+    const result = validateExperiment(
+      makeExperiment({
+        cornerCases: [{ id: 'bad', label: '坏参数', params: { missing: 1 } }],
+      }),
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issues.join()).toContain('cornerCases[0].params.missing')
+    }
+  })
+
+  it('拒绝越界的边界态参数值', () => {
+    const result = validateExperiment(
+      makeExperiment({
+        cornerCases: [{ id: 'bad', label: '越界', params: { gain: 99 } }],
+      }),
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issues.join()).toContain('0–10')
+    }
+  })
+
+  it('拒绝重复的边界态 id', () => {
+    const result = validateExperiment(
+      makeExperiment({
+        cornerCases: [
+          { id: 'same', label: '一', params: { gain: 1 } },
+          { id: 'same', label: '二', params: { gain: 2 } },
+        ],
+      }),
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issues.join()).toContain('重复')
+    }
+  })
+
+  it('拒绝缺少采样函数或缓存越界的遥测', () => {
+    const missingSample = validateExperiment(
+      makeExperiment({
+        telemetry: {
+          metrics: [{ key: 'value', label: '状态值', color: '#4F7292' }],
+        },
+      }),
+    )
+    expect(missingSample.ok).toBe(false)
+    if (!missingSample.ok) {
+      expect(missingSample.issues.join()).toContain('telemetry.sample')
+    }
+
+    const badCapacity = validateExperiment(
+      makeExperiment({
+        telemetry: {
+          metrics: [{ key: 'value', label: '状态值', color: '#4F7292' }],
+          capacity: 1,
+          sample: () => ({ value: 1 }),
+        },
+      }),
+    )
+    expect(badCapacity.ok).toBe(false)
+    if (!badCapacity.ok) {
+      expect(badCapacity.issues.join()).toContain('telemetry.capacity')
+    }
+  })
+
+  it('拒绝缺少 read 回调的探针', () => {
+    const result = validateExperiment(makeExperiment({ probe: { hint: '悬停查看' } }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issues.join()).toContain('probe.read')
+    }
+  })
+})

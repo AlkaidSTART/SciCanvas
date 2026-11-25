@@ -23,25 +23,54 @@ const EXAMPLE_PROMPTS = [
   '用 LaTeX 描述洛伦兹吸引子：$\\dot{x}=\\sigma(y-x)$，展示参数变化下的混沌轨迹。',
 ]
 
+const INSPIRATION_TAGS = [
+  {
+    label: '加入随机噪声',
+    instruction:
+      '在当前仿真中加入可调的随机噪声：新增一个 0–1 的噪声强度滑块（key 使用 noise，默认 0.1），在状态更新时对动态量叠加与噪声强度成正比的扰动，并用固定种子保证可重复；在图例中说明观测值。',
+  },
+  {
+    label: '对比基准模型',
+    instruction:
+      '新增一个布尔开关（key 使用 showReference，默认 true）用于对比基准模型：保留现有仿真作为观测值，同时叠加一条无阻尼/无扰动的理想基准轨迹，用虚线绘制，并在图例中标注两条曲线。',
+  },
+  {
+    label: '高亮梯度向量',
+    instruction:
+      '新增一个布尔开关（key 使用 showGradient，默认 true），在画布上用箭头高亮显示当前状态的梯度或受力方向，箭头长度随梯度大小变化，颜色与图例一致。',
+  },
+]
+
 export function SidePanel() {
   const experiment = useWorkbenchStore((state) => state.experiment)
   const status = useWorkbenchStore((state) => state.status)
   const source = useWorkbenchStore((state) => state.source)
   const aiSpec = useWorkbenchStore((state) => state.aiSpec)
+  const healStatus = useWorkbenchStore((state) => state.heal.status)
+  const healing = healStatus === 'requesting' || healStatus === 'applied'
   const selectExperiment = useWorkbenchStore((state) => state.selectExperiment)
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
   const resetToDefault = useWorkbenchStore((state) => state.resetToDefault)
 
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
+  const [refineText, setRefineText] = useState('')
+  const [refining, setRefining] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const controllerRef = useRef<AbortController | null>(null)
+  const refineControllerRef = useRef<AbortController | null>(null)
 
-  useEffect(() => () => controllerRef.current?.abort(), [])
+  useEffect(
+    () => () => {
+      controllerRef.current?.abort()
+      refineControllerRef.current?.abort()
+    },
+    [],
+  )
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (loading) return
+    if (loading || healing) return
     const text = prompt.trim()
     if (!text) {
       setAiError('请先描述想探索的科学问题')
@@ -69,6 +98,49 @@ export function SidePanel() {
     controllerRef.current?.abort()
     controllerRef.current = null
     setLoading(false)
+  }
+
+  /**
+   * 增量修改：只发送当前 Schema、当前参数与本次指令。失败时不替换当前实验。
+   */
+  const handleRefine = async (instruction: string) => {
+    const current = useWorkbenchStore.getState()
+    if (refining || loading || healing || current.source !== 'ai' || !current.aiSpec) return
+    const text = instruction.trim()
+    if (!text) {
+      setAiError('请先描述想如何修改当前实验')
+      return
+    }
+
+    const controller = new AbortController()
+    refineControllerRef.current = controller
+    setRefining(true)
+    setAiError(null)
+    try {
+      const spec = await generateExperiment(
+        {
+          prompt: text,
+          mode: 'refine',
+          currentSpec: current.aiSpec,
+          currentParams: current.params,
+        },
+        { signal: controller.signal },
+      )
+      applyGeneratedExperiment(spec)
+      setRefineText('')
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setAiError(error instanceof Error ? error.message : '修改失败，已保留当前实验')
+      }
+    } finally {
+      if (refineControllerRef.current === controller) refineControllerRef.current = null
+      setRefining(false)
+    }
+  }
+
+  const handleRefineSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    void handleRefine(refineText)
   }
 
   return (
@@ -125,7 +197,7 @@ export function SidePanel() {
         <h2 className="m-0 flex items-center justify-between gap-2 text-[10.5px] font-semibold uppercase tracking-[0.13em] text-ink-faint">
           AI 实验生成
           <span className="rounded-[5px] border border-line bg-ink-dim/10 px-1.5 py-0.5 font-mono text-[9px] normal-case tracking-normal text-ink-dim">
-            M3
+            M4
           </span>
         </h2>
 
@@ -176,7 +248,7 @@ export function SidePanel() {
             <button
               className="flex-1 rounded-lg border border-transparent bg-accent-strong px-3.5 py-[7px] text-xs font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
               type="submit"
-              disabled={loading}
+              disabled={loading || refining || healing}
             >
               {loading ? '生成中…' : '生成实验'}
             </button>
@@ -214,6 +286,70 @@ export function SidePanel() {
         <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
           生成失败不会替换当前实验；服务端未配置凭证时会给出明确提示，预设案例始终可用。
         </p>
+
+        {source === 'ai' && aiSpec && (
+          <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.06)] p-2.5">
+            <h3 className="m-0 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6d5a7d]">
+              基于当前实验修改
+              <span className="font-mono text-[9px] normal-case tracking-normal text-ink-faint">
+                增量
+              </span>
+            </h3>
+
+            <div className="flex flex-wrap gap-1.5">
+              {INSPIRATION_TAGS.map((tag) => (
+                <button
+                  key={tag.label}
+                  className="rounded-full border border-[rgba(138,118,168,0.32)] bg-surface px-2 py-[3px] text-[9.5px] text-[#6d5a7d] transition-colors enabled:hover:border-[rgba(138,118,168,0.55)] enabled:hover:bg-[rgba(138,118,168,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
+                  type="button"
+                  disabled={refining || loading || healing}
+                  title={tag.instruction}
+                  onClick={() => void handleRefine(tag.instruction)}
+                >
+                  {tag.label}
+                </button>
+              ))}
+            </div>
+
+            <form className="flex flex-col gap-1.5" onSubmit={handleRefineSubmit}>
+              <textarea
+                className="resize-none rounded-[8px] border border-line bg-surface-soft px-2.5 py-[7px] text-[11px] leading-[1.55] text-ink placeholder:text-ink-faint focus:border-accent-line focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                rows={2}
+                value={refineText}
+                maxLength={MAX_PROMPT_LENGTH}
+                disabled={refining}
+                onChange={(event) => setRefineText(event.target.value)}
+                placeholder="例如：把噪声强度做成可调滑块；用虚线对比理想轨迹…"
+                aria-label="实验修改指令"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
+                  type="submit"
+                  disabled={refining || loading || healing}
+                >
+                  {refining ? '应用中…' : '应用修改'}
+                </button>
+                {refining && (
+                  <button
+                    className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                    type="button"
+                    onClick={() => {
+                      refineControllerRef.current?.abort()
+                      refineControllerRef.current = null
+                      setRefining(false)
+                    }}
+                  >
+                    取消
+                  </button>
+                )}
+              </div>
+            </form>
+            <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
+              只发送当前 Schema、当前参数与本次指令；校验失败不会替换当前实验。
+            </p>
+          </div>
+        )}
       </section>
 
       <div className="mt-auto flex items-center gap-2 border-t border-line pt-3.5 text-[10.5px] text-ink-faint max-[980px]:hidden">

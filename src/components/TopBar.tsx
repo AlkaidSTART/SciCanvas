@@ -17,7 +17,7 @@ export function TopBar() {
           </span>
         </span>
         <span className="rounded-[5px] border border-[rgba(230,197,127,0.5)] bg-butter/20 px-1.5 py-0.5 font-mono text-[10px] text-[#8a6a2f] max-[640px]:hidden">
-          M3
+          M4
         </span>
       </div>
 

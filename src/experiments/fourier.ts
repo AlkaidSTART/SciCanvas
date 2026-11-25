@@ -267,6 +267,51 @@ export const fourierSquareWave: ExperimentDefinition<FourierState> = {
     },
   ],
   legend: LEGEND,
+  cornerCases: [
+    {
+      id: 'single-harmonic',
+      label: '仅基波 N = 1',
+      description: '只剩一次谐波，逼近结果是一条正弦曲线。',
+      params: { n: 1 },
+    },
+    {
+      id: 'nine-harmonics',
+      label: '九项谐波 N = 9',
+      description: '常见演示档位，已能看出方波轮廓与吉布斯过冲。',
+      params: { n: 9 },
+    },
+    {
+      id: 'high-order',
+      label: '高次逼近 N = 41',
+      description: '接近最高项数，边缘最陡但过冲仍约为 9%。',
+      params: { n: 41 },
+    },
+  ],
+  probe: {
+    hint: '悬停在曲线上查看该相位的部分和取值',
+    read: (_state, params, point, viewport) => {
+      const { plot } = layout(viewport.width, viewport.height)
+      if (
+        point.x < plot.x ||
+        point.x > plot.x + plot.width ||
+        point.y < plot.y ||
+        point.y > plot.y + plot.height
+      ) {
+        return null
+      }
+      const x = -Math.PI + ((point.x - plot.x) / plot.width) * (2 * Math.PI)
+      const harmonics = Math.round(readNumberParam(params, 'n', 9))
+      const value = squareWavePartial(x, harmonics)
+      return {
+        position: `x = ${x.toFixed(2)} rad`,
+        label: `部分和 S${harmonics}(x)`,
+        value: value.toFixed(3),
+        detail: `目标方波 ${x < 0 ? -1 : 1} · ${
+          readBooleanParam(params, 'showTarget', true) ? '已显示基准' : '基准隐藏中'
+        }`,
+      }
+    },
+  },
   model: {
     createState,
     step,

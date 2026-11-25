@@ -1,6 +1,8 @@
+import type { ControlValue } from '../types/experiment'
 import { AI_ERROR_MESSAGES } from './errors'
 import type { AiErrorCode } from './errors'
-import { MAX_PROMPT_LENGTH } from './prompt'
+import { DEFAULT_REPAIR_INSTRUCTION, MAX_PROMPT_LENGTH } from './prompt'
+import type { GenerationMode, RepairDiagnostic } from './prompt'
 import { validateGeneratedSpec } from './schema'
 import type { GeneratedExperimentSpec } from './schema'
 
@@ -16,6 +18,14 @@ export class AiGenerationError extends Error {
     this.name = 'AiGenerationError'
     this.code = code
   }
+}
+
+export interface GenerateExperimentRequest {
+  prompt: string
+  mode?: GenerationMode
+  currentSpec?: GeneratedExperimentSpec
+  currentParams?: Record<string, ControlValue>
+  diagnostic?: RepairDiagnostic
 }
 
 export interface GenerateExperimentOptions {
@@ -51,15 +61,43 @@ function readServerError(payload: unknown): { code?: AiErrorCode; message?: stri
   }
 }
 
+function buildRequestBody(input: string | GenerateExperimentRequest): Record<string, unknown> {
+  const request: GenerateExperimentRequest = typeof input === 'string' ? { prompt: input } : input
+  const mode = request.mode ?? 'create'
+  const text =
+    mode === 'repair'
+      ? request.prompt.trim() || DEFAULT_REPAIR_INSTRUCTION
+      : request.prompt.trim()
+
+  const body: Record<string, unknown> = { prompt: text }
+  if (typeof input === 'string') return body
+
+  body.mode = mode
+  if (mode === 'refine') {
+    body.currentSpec = request.currentSpec
+    body.currentParams = request.currentParams ?? {}
+  }
+  if (mode === 'repair') {
+    body.currentSpec = request.currentSpec
+    body.diagnostic = request.diagnostic
+  }
+  return body
+}
+
 /**
  * 浏览器侧生成客户端：只与服务端代理通信，不接触模型凭证。
  * 超时、取消与各类失败都转换为带稳定 code 的 AiGenerationError。
  */
 export async function generateExperiment(
-  prompt: string,
+  input: string | GenerateExperimentRequest,
   options: GenerateExperimentOptions = {},
 ): Promise<GeneratedExperimentSpec> {
-  const text = prompt.trim()
+  const request: GenerateExperimentRequest = typeof input === 'string' ? { prompt: input } : input
+  const mode = request.mode ?? 'create'
+  const text =
+    mode === 'repair'
+      ? request.prompt.trim() || DEFAULT_REPAIR_INSTRUCTION
+      : request.prompt.trim()
   if (!text) throw new AiGenerationError('bad_request', '请先描述想探索的科学问题')
   if (text.length > MAX_PROMPT_LENGTH) {
     throw new AiGenerationError('bad_request', `描述不能超过 ${MAX_PROMPT_LENGTH} 个字符`)
@@ -80,7 +118,7 @@ export async function generateExperiment(
     const response = await fetchImpl('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: text }),
+      body: JSON.stringify(buildRequestBody(input)),
       signal: controller.signal,
     })
 

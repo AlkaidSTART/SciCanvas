@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
+import { notifySessionOutcome } from '../runtime/aiSessionBus'
 import type { RuntimeErrorInfo, RuntimeStatus } from '../runtime/CanvasRuntime'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 
@@ -18,7 +19,7 @@ const PING_INTERVAL_MS = 200
 const STATUS_VALUES: RuntimeStatus[] = ['running', 'paused', 'error']
 
 function readScope(value: unknown): RuntimeErrorInfo['scope'] {
-  return value === 'step' || value === 'draw' ? value : 'init'
+  return value === 'step' || value === 'draw' || value === 'first-frame' ? value : 'init'
 }
 
 /**
@@ -36,6 +37,7 @@ export function useAISandbox(
   const reloadKey = useWorkbenchStore((state) => state.reloadKey)
   const syncStatus = useWorkbenchStore((state) => state.syncStatus)
   const syncError = useWorkbenchStore((state) => state.syncError)
+  const markAiVersionGood = useWorkbenchStore((state) => state.markAiVersionGood)
 
   const paramsRef = useRef(params)
   const speedRef = useRef(speed)
@@ -57,6 +59,7 @@ export function useAISandbox(
 
     let disposed = false
     let started = false
+    let settled = false
     let token = 0
     let timer: ReturnType<typeof setTimeout> | undefined
     let ping: ReturnType<typeof setInterval> | undefined
@@ -66,18 +69,30 @@ export function useAISandbox(
       iframe.contentWindow?.postMessage(message, '*')
     }
 
+    const settle = (outcome: Parameters<typeof notifySessionOutcome>[0]) => {
+      if (settled) return
+      settled = true
+      notifySessionOutcome(outcome)
+    }
+
     const armTimeout = () => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         if (disposed) return
-        syncError({ scope: 'init', message: '隔离沙盒初始化超时，请重试' })
+        const info: RuntimeErrorInfo = {
+          scope: 'init',
+          message: '隔离沙盒初始化超时，请重试',
+        }
+        syncError(info)
         syncStatus('error')
+        settle({ ok: false, error: info })
       }, INIT_TIMEOUT_MS)
     }
 
     const start = () => {
       if (disposed || started) return
       started = true
+      settled = false
       token += 1
       syncError(null)
       syncStatus('running')
@@ -112,18 +127,26 @@ export function useAISandbox(
       }
       if (data.type === 'status') {
         if (STATUS_VALUES.includes(data.status as RuntimeStatus)) {
-          syncStatus(data.status as RuntimeStatus)
+          const nextStatus = data.status as RuntimeStatus
+          syncStatus(nextStatus)
+          // 首帧初始化成功：记录可用版本并结束本次修复会话的等待。
+          if (nextStatus !== 'error') {
+            markAiVersionGood()
+            settle({ ok: true })
+          }
         }
         return
       }
-      syncError({
+      const info: RuntimeErrorInfo = {
         scope: readScope(data.scope),
         message:
           typeof data.message === 'string' && data.message.length > 0
             ? data.message
             : '生成代码执行失败',
-      })
+      }
+      syncError(info)
       syncStatus('error')
+      settle({ ok: false, error: info })
     }
 
     window.addEventListener('message', handleMessage)
@@ -148,7 +171,7 @@ export function useAISandbox(
       sendRef.current = () => {}
       retryRef.current = () => {}
     }
-  }, [aiSpec, iframeRef, reloadKey, source, syncError, syncStatus])
+  }, [aiSpec, iframeRef, markAiVersionGood, reloadKey, source, syncError, syncStatus])
 
   useEffect(() => {
     if (source === 'ai') sendRef.current({ type: 'params', params })

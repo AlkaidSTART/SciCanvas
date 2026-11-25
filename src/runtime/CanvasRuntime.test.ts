@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CanvasRuntime } from './CanvasRuntime'
-import type { RuntimeErrorInfo, RuntimeStatus } from './CanvasRuntime'
+import type { ProbeReadout, RuntimeErrorInfo, RuntimeStatus } from './CanvasRuntime'
 import { createDefaultParams } from './params'
-import type { ExperimentDefinition, ParamValues } from '../types/experiment'
+import type {
+  ExperimentDefinition,
+  ParamValues,
+  TelemetrySample,
+} from '../types/experiment'
 
 interface CounterState {
   value: number
@@ -78,6 +82,7 @@ function createHarness() {
   }
 
   const ctx = createContext()
+  const listeners: Record<string, Array<(event: never) => void>> = {}
   const canvas = {
     width: 0,
     height: 0,
@@ -95,9 +100,28 @@ function createHarness() {
       y: 0,
       toJSON: () => ({}),
     }),
+    addEventListener: (type: string, handler: (event: never) => void) => {
+      ;(listeners[type] ??= []).push(handler)
+    },
+    removeEventListener: (type: string, handler: (event: never) => void) => {
+      listeners[type] = (listeners[type] ?? []).filter((item) => item !== handler)
+    },
   } as unknown as HTMLCanvasElement
 
-  return { canvas, frames, cancelled, flush, requestFrame, cancelFrame }
+  const dispatch = (type: string, event: unknown): void => {
+    for (const handler of listeners[type] ?? []) handler(event as never)
+  }
+
+  return {
+    canvas,
+    frames,
+    cancelled,
+    flush,
+    requestFrame,
+    cancelFrame,
+    listeners,
+    dispatch,
+  }
 }
 
 type Harness = ReturnType<typeof createHarness>
@@ -107,6 +131,8 @@ interface RuntimeOverrides {
   params?: ParamValues
   onStatusChange?: (status: RuntimeStatus) => void
   onError?: (error: RuntimeErrorInfo) => void
+  onTelemetry?: (samples: TelemetrySample[]) => void
+  onProbe?: (readout: ProbeReadout | null) => void
 }
 
 function createRuntime(harness: Harness, overrides: RuntimeOverrides = {}): CanvasRuntime<CounterState> {
@@ -120,6 +146,8 @@ function createRuntime(harness: Harness, overrides: RuntimeOverrides = {}): Canv
     autoResize: false,
     onStatusChange: overrides.onStatusChange,
     onError: overrides.onError,
+    onTelemetry: overrides.onTelemetry,
+    onProbe: overrides.onProbe,
   })
 }
 
@@ -276,5 +304,142 @@ describe('CanvasRuntime 故障隔离', () => {
     expect(errors[0]?.scope).toBe('init')
     expect(errors[0]?.message).toContain('实验定义不合法')
     runtime.destroy()
+  })
+})
+
+describe('CanvasRuntime 遥测', () => {
+  function makeTelemetryExperiment(capacity = 4): ExperimentDefinition<CounterState> {
+    const experiment = makeCounterExperiment()
+    experiment.telemetry = {
+      metrics: [{ key: 'value', label: '累计值', color: '#4C7C8A', precision: 3 }],
+      capacity,
+      interval: 0.001,
+      sample: (state) => ({ value: state.value }),
+    }
+    return experiment
+  }
+
+  it('按仿真步采样，并把缓存限制在声明的容量内', () => {
+    const harness = createHarness()
+    const emissions: TelemetrySample[][] = []
+    const runtime = createRuntime(harness, {
+      experiment: makeTelemetryExperiment(4),
+      params: { gain: 5 },
+      onTelemetry: (samples) => emissions.push(samples),
+    })
+
+    expect(emissions[0]).toHaveLength(1)
+    expect(emissions[0][0].t).toBe(0)
+
+    for (let index = 0; index < 12; index += 1) runtime.stepOnce()
+
+    const latest = emissions[emissions.length - 1]
+    expect(latest).toHaveLength(4)
+    expect(latest[latest.length - 1].t).toBeCloseTo(runtime.getSnapshot().simTime, 8)
+    expect(latest[latest.length - 1].values.value).toBeGreaterThan(0)
+    runtime.destroy()
+  })
+
+  it('重置后重新从 t = 0 开始采样', () => {
+    const harness = createHarness()
+    const emissions: TelemetrySample[][] = []
+    const runtime = createRuntime(harness, {
+      experiment: makeTelemetryExperiment(60),
+      onTelemetry: (samples) => emissions.push(samples),
+    })
+
+    for (let index = 0; index < 8; index += 1) runtime.stepOnce()
+    expect(emissions[emissions.length - 1].length).toBeGreaterThan(1)
+
+    runtime.reset()
+    const afterReset = emissions[emissions.length - 1]
+    expect(afterReset).toHaveLength(1)
+    expect(afterReset[0].t).toBe(0)
+    expect(afterReset[0].values.value).toBe(0)
+    runtime.destroy()
+  })
+
+  it('采样函数抛错时停用遥测但不影响主仿真', () => {
+    const harness = createHarness()
+    const emissions: TelemetrySample[][] = []
+    const experiment = makeCounterExperiment()
+    experiment.telemetry = {
+      metrics: [{ key: 'value', label: '累计值', color: '#4C7C8A' }],
+      sample: () => {
+        throw new Error('sampler exploded')
+      },
+    }
+
+    const runtime = createRuntime(harness, {
+      experiment,
+      onTelemetry: (samples) => emissions.push(samples),
+    })
+    runtime.stepOnce()
+
+    expect(runtime.getSnapshot().steps).toBe(1)
+    expect(runtime.getStatus()).toBe('paused')
+    expect(emissions[emissions.length - 1]).toEqual([])
+    runtime.destroy()
+  })
+})
+
+describe('CanvasRuntime 悬停探针', () => {
+  function makeProbeExperiment(): ExperimentDefinition<CounterState> {
+    const experiment = makeCounterExperiment()
+    experiment.probe = {
+      hint: '悬停查看',
+      read: (state, _params, point) =>
+        point.x < 20
+          ? null
+          : {
+              position: `x = ${point.x.toFixed(1)}`,
+              label: '累计值',
+              value: state.value.toFixed(3),
+            },
+    }
+    return experiment
+  }
+
+  it('把 CSS 坐标换算成相对画布的读数并忽略触屏', () => {
+    const harness = createHarness()
+    const readouts: Array<ProbeReadout | null> = []
+    const runtime = createRuntime(harness, {
+      experiment: makeProbeExperiment(),
+      onProbe: (readout) => readouts.push(readout),
+    })
+
+    harness.dispatch('pointermove', { clientX: 120, clientY: 80, pointerType: 'mouse' })
+    const readout = readouts[readouts.length - 1]
+    expect(readout?.point).toEqual({ x: 120, y: 80 })
+    expect(readout?.reading.position).toBe('x = 120.0')
+
+    const countBeforeTouch = readouts.length
+    harness.dispatch('pointermove', { clientX: 300, clientY: 200, pointerType: 'touch' })
+    expect(readouts.length).toBe(countBeforeTouch)
+
+    harness.dispatch('pointermove', { clientX: 8, clientY: 80, pointerType: 'mouse' })
+    expect(readouts[readouts.length - 1]).toBeNull()
+
+    harness.dispatch('pointermove', { clientX: 200, clientY: 80, pointerType: 'mouse' })
+    expect(readouts[readouts.length - 1]).not.toBeNull()
+    harness.dispatch('pointerleave', {})
+    expect(readouts[readouts.length - 1]).toBeNull()
+    runtime.destroy()
+  })
+
+  it('销毁时移除指针监听', () => {
+    const harness = createHarness()
+    const readouts: Array<ProbeReadout | null> = []
+    const runtime = createRuntime(harness, {
+      experiment: makeProbeExperiment(),
+      onProbe: (readout) => readouts.push(readout),
+    })
+    expect(harness.listeners.pointermove?.length).toBe(1)
+    runtime.destroy()
+    expect(harness.listeners.pointermove?.length ?? 0).toBe(0)
+
+    const countAfterDestroy = readouts.length
+    harness.dispatch('pointermove', { clientX: 200, clientY: 80, pointerType: 'mouse' })
+    expect(readouts.length).toBe(countAfterDestroy)
   })
 })

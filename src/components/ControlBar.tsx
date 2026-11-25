@@ -1,6 +1,11 @@
 import { describeControlValue } from '../runtime/params'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
-import type { ControlDefinition, ControlValue } from '../types/experiment'
+import type {
+  ControlDefinition,
+  ControlValue,
+  CornerCase,
+  ParamValues,
+} from '../types/experiment'
 import { PauseIcon, PlayIcon, ResetIcon, StepIcon } from './icons'
 
 interface ControlBarProps {
@@ -11,6 +16,11 @@ interface ControlBarProps {
 
 const SPEED_OPTIONS = [0.5, 1, 2]
 
+/** 控件显示值与边界态声明完全一致时视为选中。 */
+function isCornerCaseActive(cornerCase: CornerCase, params: ParamValues): boolean {
+  return Object.entries(cornerCase.params).every(([key, value]) => params[key] === value)
+}
+
 export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
   const experiment = useWorkbenchStore((state) => state.experiment)
   const params = useWorkbenchStore((state) => state.params)
@@ -18,9 +28,11 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
   const speed = useWorkbenchStore((state) => state.speed)
   const setSpeed = useWorkbenchStore((state) => state.setSpeed)
   const setParam = useWorkbenchStore((state) => state.setParam)
+  const applyCornerCase = useWorkbenchStore((state) => state.applyCornerCase)
 
   const running = status === 'running'
   const disabled = status === 'error'
+  const cornerCases = experiment.cornerCases ?? []
 
   return (
     <footer className="flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#fcf9f2,#f8f2e8)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px]">
@@ -81,6 +93,34 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
           固定步长 1/120 s · 后台切换自动限幅
         </span>
       </div>
+
+      {cornerCases.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="边界快捷态">
+          <span className="mr-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-faint">
+            边界快捷态
+          </span>
+          {cornerCases.map((cornerCase) => {
+            const active = isCornerCaseActive(cornerCase, params)
+            return (
+              <button
+                key={cornerCase.id}
+                className={`rounded-full border px-2.5 py-[4px] text-[10.5px] leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                  active
+                    ? 'border-accent-line bg-accent-soft text-accent-strong'
+                    : 'border-line bg-surface text-ink-dim enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink'
+                }`}
+                type="button"
+                disabled={disabled}
+                aria-pressed={active}
+                title={cornerCase.description ?? '一键切换参数并重置仿真'}
+                onClick={() => applyCornerCase(cornerCase.id)}
+              >
+                {cornerCase.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-x-5 gap-y-2.5 max-[640px]:grid-cols-2 max-[640px]:gap-x-3.5">
         {experiment.controls.map((control) => (

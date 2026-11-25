@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AiGenerationError, generateExperiment } from './client'
+import type { GeneratedExperimentSpec } from './schema'
 
-const validSpec = {
+const validSpec: GeneratedExperimentSpec = {
   title: '阻尼单摆',
   domain: 'Physics / Mechanics',
   formulaLatex: '\\ddot{\\theta} + \\gamma\\dot{\\theta} + \\omega^2\\theta = 0',
@@ -126,5 +127,89 @@ describe('generateExperiment', () => {
     await expect(
       generateExperiment('x', { fetchImpl, timeoutMs: 10 }),
     ).rejects.toMatchObject({ code: 'timeout' })
+  })
+})
+
+describe('增量修改与修复请求', () => {
+  it('微调请求携带当前 Schema、当前参数与指令', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({ ok: true, spec: validSpec })
+    }) as typeof fetch
+
+    const spec = await generateExperiment(
+      {
+        prompt: '  加入随机噪声  ',
+        mode: 'refine',
+        currentSpec: validSpec,
+        currentParams: { damping: 0.2, trail: true },
+      },
+      { fetchImpl },
+    )
+
+    expect(spec.title).toBe('阻尼单摆')
+    expect(body).toMatchObject({
+      prompt: '加入随机噪声',
+      mode: 'refine',
+      currentParams: { damping: 0.2, trail: true },
+    })
+    expect(body.currentSpec).toEqual(validSpec)
+    expect(String(JSON.stringify(body))).not.toContain('sk-')
+  })
+
+  it('修复请求携带最小诊断，缺省指令使用稳定文案', async () => {
+    let body: Record<string, unknown> = {}
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({ ok: true, spec: validSpec })
+    }) as typeof fetch
+
+    await generateExperiment(
+      {
+        prompt: '   ',
+        mode: 'repair',
+        currentSpec: validSpec,
+        diagnostic: { stage: 'first-frame', message: '首帧绘制失败', attempt: 1 },
+      },
+      { fetchImpl },
+    )
+
+    expect(typeof body.prompt).toBe('string')
+    expect(String(body.prompt).length).toBeGreaterThan(0)
+    expect(body).toMatchObject({ mode: 'repair' })
+    expect(body.currentSpec).toEqual(validSpec)
+    expect(body.diagnostic).toEqual({
+      stage: 'first-frame',
+      message: '首帧绘制失败',
+      attempt: 1,
+    })
+  })
+
+  it('空的微调指令不会发起请求', async () => {
+    const fetchImpl = vi.fn()
+    await expect(
+      generateExperiment(
+        { prompt: '  ', mode: 'refine', currentSpec: validSpec },
+        { fetchImpl: fetchImpl as unknown as typeof fetch },
+      ),
+    ).rejects.toMatchObject({ code: 'bad_request' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('修复结果仍需客户端二次校验', async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({ ok: true, spec: { title: '损坏结果' } })) as typeof fetch
+    await expect(
+      generateExperiment(
+        {
+          prompt: '修复',
+          mode: 'repair',
+          currentSpec: validSpec,
+          diagnostic: { stage: 'init', message: 'x', attempt: 2 },
+        },
+        { fetchImpl },
+      ),
+    ).rejects.toMatchObject({ code: 'schema_invalid' })
   })
 })

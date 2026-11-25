@@ -78,13 +78,13 @@ canvas { display: block; width: 100%; height: 100%; background: #FBF7EF; }
     viewport = { width: width, height: height };
   }
 
-  function render() {
+  function render(first) {
     if (!ctx || !model || errored) return;
     try {
       ctx.clearRect(0, 0, viewport.width, viewport.height);
       model.draw(ctx, state, params, viewport);
     } catch (error) {
-      fail('draw', error);
+      fail(first ? 'first-frame' : 'draw', error);
     }
   }
 
@@ -157,7 +157,7 @@ canvas { display: block; width: 100%; height: 100%; background: #FBF7EF; }
       model = candidate;
       resize();
       state = model.createState(params);
-      render();
+      render(true);
       if (errored) return;
       playing = message.playing !== false;
       post({ type: 'status', token: token, status: playing ? 'running' : 'paused' });

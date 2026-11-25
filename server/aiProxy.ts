@@ -3,7 +3,8 @@ import type { Plugin } from 'vite'
 import type { AiServerConfig } from './generate.ts'
 import { generateExperiment } from './generate.ts'
 
-const MAX_BODY_BYTES = 8 * 1024
+/** 微调/修复请求会携带当前实验的完整 schema（含仿真代码），因此放宽到 64KB。 */
+const MAX_BODY_BYTES = 64 * 1024
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 10
 

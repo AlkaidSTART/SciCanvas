@@ -558,6 +558,67 @@ export const optimizerLandscape: ExperimentDefinition<OptimizerState> = {
     },
   ],
   legend: LEGEND,
+  cornerCases: [
+    {
+      id: 'small-step',
+      label: '小步长探索',
+      description: '学习率很小，SGD 推进缓慢，适合观察稳定下降。',
+      params: { learningRate: 0.002, momentum: 0.9, terrain: 'saddle' },
+    },
+    {
+      id: 'ravine-momentum',
+      label: '峡谷高动量',
+      description: '在狭长峡谷中启用高动量，观察来回震荡与加速。',
+      params: { terrain: 'ravine', learningRate: 0.01, momentum: 0.99 },
+    },
+    {
+      id: 'large-step',
+      label: '大步长震荡',
+      description: '学习率接近上限，优化轨迹可能在谷底两侧反复跳变。',
+      params: { learningRate: 0.02, momentum: 0.9, terrain: 'saddle' },
+    },
+  ],
+  telemetry: {
+    metrics: [
+      { key: 'lossSgd', label: 'SGD 损失', color: CANVAS.blue, precision: 3 },
+      { key: 'lossMomentum', label: 'Momentum 损失', color: CANVAS.peach, precision: 3 },
+      { key: 'lossAdam', label: 'Adam 损失', color: CANVAS.mint, precision: 3 },
+    ],
+    interval: 0.1,
+    sample: (state, params) => {
+      const terrain = terrainOf(params)
+      return {
+        lossSgd: terrain.loss(state.sgd.pos.x, state.sgd.pos.y),
+        lossMomentum: terrain.loss(state.momentum.pos.x, state.momentum.pos.y),
+        lossAdam: terrain.loss(state.adam.pos.x, state.adam.pos.y),
+      }
+    },
+  },
+  probe: {
+    hint: '悬停在地形上查看该点的损失与梯度强度',
+    read: (_state, params, point, viewport) => {
+      const { plot } = layout(viewport.width, viewport.height)
+      if (
+        point.x < plot.x ||
+        point.x > plot.x + plot.width ||
+        point.y < plot.y ||
+        point.y > plot.y + plot.height
+      ) {
+        return null
+      }
+      const terrain = terrainOf(params)
+      const { minX, maxX, minY, maxY } = terrain.view
+      const worldX = minX + ((point.x - plot.x) / plot.width) * (maxX - minX)
+      const worldY = maxY - ((point.y - plot.y) / plot.height) * (maxY - minY)
+      const gradient = terrain.grad(worldX, worldY)
+      return {
+        position: `(x, y) = (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`,
+        label: '损失 L',
+        value: terrain.loss(worldX, worldY).toFixed(3),
+        detail: `|∇L| = ${Math.hypot(gradient.x, gradient.y).toFixed(3)} · ${terrain.label}`,
+      }
+    },
+  },
   model: {
     createState,
     step,

@@ -138,3 +138,150 @@ describe('generateExperiment（服务端）', () => {
     if (!result.body.ok) expect(result.body.error.code).toBe('schema_invalid')
   })
 })
+
+describe('增量修改与修复请求（服务端）', () => {
+  it('微调请求校验上下文并把完整 Schema 与参数交给模型', async () => {
+    let requestInit: RequestInit | undefined
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      requestInit = init
+      return completion(JSON.stringify(spec))
+    }) as typeof fetch
+
+    const result = await generateExperiment(
+      {
+        prompt: '加入随机噪声',
+        mode: 'refine',
+        currentSpec: spec,
+        currentParams: { damping: 0.4, trail: true },
+      },
+      { ...config, fetchImpl },
+    )
+
+    expect(result.status).toBe(200)
+    expect(result.body.ok).toBe(true)
+    const body = JSON.parse(String(requestInit?.body)) as Record<string, unknown>
+    expect(body.temperature).toBe(0.5)
+    const messages = body.messages as Array<{ role: string; content: string }>
+    expect(messages[0].content).toContain('增量修改')
+    const payload = JSON.parse(messages[1].content) as Record<string, unknown>
+    expect(payload.instruction).toBe('加入随机噪声')
+    expect(payload.currentSpec).toEqual(spec)
+    expect(payload.currentParams).toEqual({ damping: 0.4, trail: true })
+  })
+
+  it('微调缺少或非法的当前 Schema 直接返回 400 且不请求上游', async () => {
+    const fetchImpl = vi.fn()
+    const missing = await generateExperiment(
+      { prompt: '加噪声', mode: 'refine' },
+      { ...config, fetchImpl },
+    )
+    expect(missing.status).toBe(400)
+    if (!missing.body.ok) expect(missing.body.error.code).toBe('bad_request')
+
+    const invalid = await generateExperiment(
+      { prompt: '加噪声', mode: 'refine', currentSpec: { title: '只有标题' } },
+      { ...config, fetchImpl },
+    )
+    expect(invalid.status).toBe(400)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('微调参数只接受数量有限的原始值', async () => {
+    const fetchImpl = vi.fn()
+    const nested = await generateExperiment(
+      {
+        prompt: '加噪声',
+        mode: 'refine',
+        currentSpec: spec,
+        currentParams: { damping: { value: 1 } },
+      },
+      { ...config, fetchImpl },
+    )
+    expect(nested.status).toBe(400)
+
+    const tooMany = await generateExperiment(
+      {
+        prompt: '加噪声',
+        mode: 'refine',
+        currentSpec: spec,
+        currentParams: Object.fromEntries(
+          Array.from({ length: 13 }, (_value, index) => [`p${index}`, index]),
+        ),
+      },
+      { ...config, fetchImpl },
+    )
+    expect(tooMany.status).toBe(400)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('修复请求携带最小诊断并可使用缺省指令', async () => {
+    let requestInit: RequestInit | undefined
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      requestInit = init
+      return completion(JSON.stringify(spec))
+    }) as typeof fetch
+
+    const result = await generateExperiment(
+      {
+        mode: 'repair',
+        currentSpec: spec,
+        diagnostic: { stage: 'first-frame', message: '首帧绘制失败', attempt: 1 },
+      },
+      { ...config, fetchImpl },
+    )
+
+    expect(result.status).toBe(200)
+    const body = JSON.parse(String(requestInit?.body)) as Record<string, unknown>
+    expect(body.temperature).toBe(0.3)
+    const messages = body.messages as Array<{ role: string; content: string }>
+    expect(messages[0].content).toContain('错误修复')
+    const payload = JSON.parse(messages[1].content) as Record<string, unknown>
+    expect(payload.diagnostic).toEqual({
+      stage: 'first-frame',
+      message: '首帧绘制失败',
+      attempt: 1,
+    })
+    expect(String(payload.instruction).length).toBeGreaterThan(0)
+  })
+
+  it('修复缺少或非法的诊断直接返回 400', async () => {
+    const fetchImpl = vi.fn()
+    const missing = await generateExperiment(
+      { mode: 'repair', currentSpec: spec },
+      { ...config, fetchImpl },
+    )
+    expect(missing.status).toBe(400)
+
+    const badStage = await generateExperiment(
+      {
+        mode: 'repair',
+        currentSpec: spec,
+        diagnostic: { stage: 'network', message: 'x', attempt: 1 },
+      },
+      { ...config, fetchImpl },
+    )
+    expect(badStage.status).toBe(400)
+
+    const badAttempt = await generateExperiment(
+      {
+        mode: 'repair',
+        currentSpec: spec,
+        diagnostic: { stage: 'init', message: 'x', attempt: 9 },
+      },
+      { ...config, fetchImpl },
+    )
+    expect(badAttempt.status).toBe(400)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('拒绝未知 mode', async () => {
+    const fetchImpl = vi.fn()
+    const result = await generateExperiment(
+      { prompt: 'x', mode: 'rewrite' },
+      { ...config, fetchImpl },
+    )
+    expect(result.status).toBe(400)
+    if (!result.body.ok) expect(result.body.error.code).toBe('bad_request')
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})

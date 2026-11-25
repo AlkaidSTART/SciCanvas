@@ -446,6 +446,39 @@ export const dampedOscillator: ExperimentDefinition<DampedOscillatorState> = {
     { label: '相空间轨迹', color: COLORS.accentSoft },
     { label: '驱动力 F(t)', color: COLORS.amber },
   ],
+  cornerCases: [
+    {
+      id: 'resonance',
+      label: '低阻尼共振',
+      description: '驱动频率接近固有频率 ω₀ = 2.0 rad/s，振幅持续放大。',
+      params: { damping: 0.08, omega: 2, force: 0.6 },
+    },
+    {
+      id: 'overdamped',
+      label: '过阻尼收敛',
+      description: '阻尼远大于临界值，振子缓慢回到平衡位置。',
+      params: { damping: 2, omega: 1, force: 0.2 },
+    },
+    {
+      id: 'free-decay',
+      label: '自由衰减',
+      description: '移除周期驱动力，观察机械能随阻尼衰减。',
+      params: { damping: 0.3, omega: 1.5, force: 0 },
+    },
+  ],
+  telemetry: {
+    metrics: [
+      { key: 'energy', label: '机械能 E', unit: 'J', color: COLORS.accent, precision: 3 },
+      { key: 'displacement', label: '位移 x', unit: 'm', color: COLORS.amber, precision: 2 },
+      { key: 'drive', label: '驱动力 F', unit: 'N', color: COLORS.spring, precision: 2 },
+    ],
+    interval: 0.08,
+    sample: (state, params) => ({
+      energy: 0.5 * MASS * state.v * state.v + 0.5 * STIFFNESS * state.x * state.x,
+      displacement: state.x,
+      drive: readNumber(params, 'force', 0.6) * Math.cos(readNumber(params, 'omega', 1.5) * state.t),
+    }),
+  },
   model: {
     createState,
     step,

@@ -62,6 +62,69 @@ export interface SimulationModel<S = unknown> {
   ): void
 }
 
+/**
+ * 边界态快捷参数组合：点击后把声明的参数一次性写入所有相关控件，
+ * 并按实验语义重新初始化仿真状态（由工作台统一重置）。
+ * params 只包含需要覆盖的键，其余参数保持当前值。
+ */
+export interface CornerCase {
+  id: string
+  label: string
+  description?: string
+  params: ParamValues
+}
+
+/** 遥测指标的一次采样值，键与 TelemetryMetric.key 对应。 */
+export interface TelemetrySample {
+  t: number
+  values: Record<string, number>
+}
+
+export interface TelemetryMetric {
+  key: string
+  label: string
+  unit?: string
+  color: string
+  /** 浮层展示的小数位，默认 2。 */
+  precision?: number
+}
+
+/** 实验声明的实时遥测：运行时按固定仿真时间间隔采样并维护有界缓存。 */
+export interface TelemetryDefinition<S = unknown> {
+  metrics: TelemetryMetric[]
+  /** 缓存长度上限，运行时限制在 2–600，默认 180。 */
+  capacity?: number
+  /** 采样间隔（仿真秒），默认 0.1。 */
+  interval?: number
+  sample: (state: S, params: ParamValues, simTime: number) => Record<string, number>
+}
+
+export interface ProbePoint {
+  x: number
+  y: number
+}
+
+export interface ProbeReading {
+  /** 指针位置的坐标描述，例如 "x = 0.42 m"。 */
+  position: string
+  /** 局部量名称，例如 "感染占比 I"。 */
+  label: string
+  /** 局部量数值（含单位），例如 "12.3%" */
+  value: string
+  detail?: string
+}
+
+/** 实验声明的悬停探针：point 与 viewport 都使用 CSS 像素坐标。 */
+export interface ProbeDefinition<S = unknown> {
+  hint?: string
+  read: (
+    state: S,
+    params: ParamValues,
+    point: ProbePoint,
+    viewport: Viewport,
+  ) => ProbeReading | null
+}
+
 export interface ExperimentDefinition<S = unknown> {
   id: string
   title: string
@@ -71,6 +134,10 @@ export interface ExperimentDefinition<S = unknown> {
   renderType: RenderType
   controls: ControlDefinition[]
   legend?: LegendItem[]
+  /** 可选能力：未声明时对应控件与浮层整体隐藏，不做空态占位。 */
+  cornerCases?: CornerCase[]
+  telemetry?: TelemetryDefinition<S>
+  probe?: ProbeDefinition<S>
   model: SimulationModel<S>
 }
 
@@ -219,6 +286,191 @@ export function parseLegend(raw: unknown): {
 }
 
 /**
+ * 解析并校验边界态：参数键必须对应已声明控件，且取值落在控件允许范围内。
+ * 校验通过后由工作台清洗并应用，避免写入不可控的参数。
+ */
+export function parseCornerCases(
+  raw: unknown,
+  controls: ControlDefinition[],
+): { cornerCases: CornerCase[]; issues: string[] } {
+  const issues: string[] = []
+  const cornerCases: CornerCase[] = []
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { cornerCases, issues: ['cornerCases 必须是非空数组'] }
+  }
+
+  const controlsByKey = new Map(controls.map((control) => [control.key, control]))
+  const seenIds = new Set<string>()
+
+  raw.forEach((item, index) => {
+    const path = `cornerCases[${index}]`
+    if (!isRecord(item)) {
+      issues.push(`${path} 必须是对象`)
+      return
+    }
+    if (!isNonEmptyString(item.id)) {
+      issues.push(`${path}.id 必须是非空字符串`)
+      return
+    }
+    if (seenIds.has(item.id)) {
+      issues.push(`${path}.id "${item.id}" 与前面的边界态重复`)
+      return
+    }
+    if (!isNonEmptyString(item.label)) {
+      issues.push(`${path}.label 必须是非空字符串`)
+      return
+    }
+    if (item.description !== undefined && typeof item.description !== 'string') {
+      issues.push(`${path}.description 必须是字符串`)
+      return
+    }
+    if (!isRecord(item.params) || Object.keys(item.params).length === 0) {
+      issues.push(`${path}.params 必须是非空对象`)
+      return
+    }
+
+    const params: ParamValues = {}
+    let valid = true
+    for (const [key, value] of Object.entries(item.params)) {
+      const control = controlsByKey.get(key)
+      if (!control) {
+        issues.push(`${path}.params.${key} 未在 controls 中声明`)
+        valid = false
+        continue
+      }
+      if (control.type === 'slider') {
+        if (!isFiniteNumber(value) || value < control.min || value > control.max) {
+          issues.push(
+            `${path}.params.${key} 必须是 ${control.min}–${control.max} 之间的有限数字`,
+          )
+          valid = false
+          continue
+        }
+      } else if (control.type === 'toggle') {
+        if (typeof value !== 'boolean') {
+          issues.push(`${path}.params.${key} 必须是布尔值`)
+          valid = false
+          continue
+        }
+      } else if (typeof value !== 'string' || !control.options.some((option) => option.value === value)) {
+        issues.push(`${path}.params.${key} 必须是 options 中的某个 value`)
+        valid = false
+        continue
+      }
+      params[key] = value as ControlValue
+    }
+
+    if (!valid) return
+    seenIds.add(item.id)
+    cornerCases.push({
+      id: item.id,
+      label: item.label,
+      ...(item.description !== undefined ? { description: item.description as string } : {}),
+      params,
+    })
+  })
+
+  return { cornerCases, issues }
+}
+
+/** 遥测声明：指标键唯一，缓存与采样间隔必须落在运行时支持的安全范围内。 */
+export function parseTelemetry(raw: unknown): {
+  telemetry?: TelemetryDefinition
+  issues: string[]
+} {
+  const issues: string[] = []
+  if (!isRecord(raw)) {
+    return { issues: ['telemetry 必须是对象'] }
+  }
+  if (typeof raw.sample !== 'function') {
+    issues.push('telemetry.sample 必须是函数')
+  }
+
+  const metrics: TelemetryMetric[] = []
+  if (!Array.isArray(raw.metrics) || raw.metrics.length === 0) {
+    issues.push('telemetry.metrics 必须是非空数组')
+  } else {
+    const seenKeys = new Set<string>()
+    raw.metrics.forEach((metric, index) => {
+      const path = `telemetry.metrics[${index}]`
+      if (!isRecord(metric)) {
+        issues.push(`${path} 必须是对象`)
+        return
+      }
+      if (!isNonEmptyString(metric.key)) {
+        issues.push(`${path}.key 必须是非空字符串`)
+        return
+      }
+      if (seenKeys.has(metric.key)) {
+        issues.push(`${path}.key "${metric.key}" 与前面的指标重复`)
+        return
+      }
+      if (!isNonEmptyString(metric.label) || !isNonEmptyString(metric.color)) {
+        issues.push(`${path} 必须包含非空的 label 与 color`)
+        return
+      }
+      if (metric.unit !== undefined && typeof metric.unit !== 'string') {
+        issues.push(`${path}.unit 必须是字符串`)
+        return
+      }
+      if (
+        metric.precision !== undefined &&
+        (!Number.isInteger(metric.precision) || (metric.precision as number) < 0 || (metric.precision as number) > 6)
+      ) {
+        issues.push(`${path}.precision 必须是 0–6 的整数`)
+        return
+      }
+      seenKeys.add(metric.key)
+      metrics.push(metric as unknown as TelemetryMetric)
+    })
+  }
+
+  const capacity = raw.capacity
+  if (capacity !== undefined) {
+    if (!Number.isInteger(capacity) || (capacity as number) < 2 || (capacity as number) > 600) {
+      issues.push('telemetry.capacity 必须是 2–600 的整数')
+    }
+  }
+  const interval = raw.interval
+  if (interval !== undefined && (!isFiniteNumber(interval) || interval <= 0)) {
+    issues.push('telemetry.interval 必须是大于 0 的有限数字')
+  }
+
+  if (issues.length > 0) return { issues }
+  return {
+    telemetry: {
+      metrics,
+      ...(capacity !== undefined ? { capacity: capacity as number } : {}),
+      ...(interval !== undefined ? { interval: interval as number } : {}),
+      sample: raw.sample as TelemetryDefinition['sample'],
+    },
+    issues,
+  }
+}
+
+/** 悬停探针声明：只要求一个返回局部读数的回调，坐标由运行时统一换算。 */
+export function parseProbe(raw: unknown): { probe?: ProbeDefinition; issues: string[] } {
+  const issues: string[] = []
+  if (!isRecord(raw)) {
+    return { issues: ['probe 必须是对象'] }
+  }
+  if (raw.hint !== undefined && typeof raw.hint !== 'string') {
+    issues.push('probe.hint 必须是字符串')
+  }
+  if (typeof raw.read !== 'function') {
+    issues.push('probe.read 必须是函数')
+  }
+  if (issues.length > 0) return { issues }
+  return {
+    probe: {
+      ...(raw.hint !== undefined ? { hint: raw.hint as string } : {}),
+      read: raw.read as ProbeDefinition['read'],
+    },
+    issues,
+  }
+}
+
+/**
  * 对来源不可信（预设、AI 生成、导入）的实验定义做运行时校验。
  * 校验通过时返回带类型的副本，失败时返回全部问题，便于工作台局部展示。
  */
@@ -243,7 +495,19 @@ export function validateExperiment(input: unknown): ValidationResult {
     issues.push(...parseLegend(input.legend).issues)
   }
 
-  issues.push(...parseControls(input.controls).issues)
+  const parsedControls = parseControls(input.controls)
+  issues.push(...parsedControls.issues)
+
+  // 可选探索能力：未声明即不启用，声明了就必须自洽。
+  if (input.cornerCases !== undefined) {
+    issues.push(...parseCornerCases(input.cornerCases, parsedControls.controls).issues)
+  }
+  if (input.telemetry !== undefined) {
+    issues.push(...parseTelemetry(input.telemetry).issues)
+  }
+  if (input.probe !== undefined) {
+    issues.push(...parseProbe(input.probe).issues)
+  }
 
   const model = input.model
   if (!isRecord(model)) {

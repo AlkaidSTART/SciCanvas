@@ -35,7 +35,7 @@ export function coerceControlValue(control: ControlDefinition, value: unknown): 
     : control.default
 }
 
-export function createDefaultParams(experiment: ExperimentDefinition): ParamValues {
+export function createDefaultParams<S>(experiment: ExperimentDefinition<S>): ParamValues {
   const params: ParamValues = {}
   for (const control of experiment.controls) {
     params[control.key] = control.default
@@ -44,8 +44,8 @@ export function createDefaultParams(experiment: ExperimentDefinition): ParamValu
 }
 
 /** 以控件声明为准清洗参数：裁剪越界值、补齐缺失项、丢弃未知键。 */
-export function sanitizeParams(
-  experiment: ExperimentDefinition,
+export function sanitizeParams<S>(
+  experiment: ExperimentDefinition<S>,
   input: Record<string, unknown> | ParamValues,
 ): ParamValues {
   const params: ParamValues = {}

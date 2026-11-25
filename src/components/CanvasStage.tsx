@@ -6,6 +6,7 @@ import type { RuntimeErrorInfo, RuntimeStatus } from '../runtime/CanvasRuntime'
 import { SANDBOX_HTML } from '../runtime/sandboxBootstrap'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { AlertIcon } from './icons'
+import { ProbeOverlay, TelemetryOverlay } from './StageOverlays'
 
 interface CanvasStageProps {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -27,6 +28,7 @@ const STATUS_DOT_STYLE: Record<RuntimeStatus, string> = {
 
 const SCOPE_LABEL: Record<RuntimeErrorInfo['scope'], string> = {
   init: '初始化阶段',
+  'first-frame': '首帧绘制阶段',
   step: '推演阶段',
   draw: '绘制阶段',
 }
@@ -36,7 +38,12 @@ export function CanvasStage({ canvasRef, iframeRef, onRetry }: CanvasStageProps)
   const source = useWorkbenchStore((state) => state.source)
   const status = useWorkbenchStore((state) => state.status)
   const error = useWorkbenchStore((state) => state.error)
+  const heal = useWorkbenchStore((state) => state.heal)
   const resetToDefault = useWorkbenchStore((state) => state.resetToDefault)
+  const restoreLastGoodAi = useWorkbenchStore((state) => state.restoreLastGoodAi)
+  const resetHeal = useWorkbenchStore((state) => state.resetHeal)
+  const retryFailedHeal = useWorkbenchStore((state) => state.retryFailedHeal)
+  const showError = Boolean(error) && heal.status === 'idle'
 
   const formulaHtml = useMemo(
     () =>
@@ -90,13 +97,16 @@ export function CanvasStage({ canvasRef, iframeRef, onRetry }: CanvasStageProps)
         {STATUS_LABEL[status]}
       </div>
 
+      <TelemetryOverlay />
+      <ProbeOverlay />
+
       {source === 'ai' && (
         <div className="pointer-events-none absolute bottom-3 left-[18px] rounded-full border border-line bg-panel/80 px-2.5 py-[5px] font-mono text-[9.5px] text-ink-faint backdrop-blur-sm max-[640px]:hidden">
           隔离沙盒运行 · 无主应用与网络权限
         </div>
       )}
 
-      {error && (
+      {showError && error && (
         <div
           className="absolute inset-0 z-[6] grid place-items-center bg-[#f6f1e7]/85 p-6 backdrop-blur-sm"
           role="alert"
@@ -130,9 +140,74 @@ export function CanvasStage({ canvasRef, iframeRef, onRetry }: CanvasStageProps)
                 回到默认实验
               </button>
             </div>
-            <p className="col-span-full mb-0 mt-1.5 text-[10.5px] text-ink-faint">
-              M4 将在此基础上接入自动修复。
+          </div>
+        </div>
+      )}
+
+      {heal.status !== 'idle' && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-16 z-[7] flex justify-center px-4 max-[640px]:bottom-14">
+          <div
+            className={`pointer-events-auto flex w-[min(540px,100%)] flex-col gap-2 rounded-[12px] border bg-panel/95 px-4 py-3 shadow-[0_16px_36px_rgba(58,51,43,0.14)] backdrop-blur-md ${
+              heal.status === 'failed' ? 'border-rose/40' : 'border-line'
+            }`}
+            role="status"
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className={`size-1.5 flex-none rounded-full ${
+                  heal.status === 'failed'
+                    ? 'bg-danger'
+                    : heal.status === 'succeeded'
+                      ? 'bg-mint'
+                      : 'bg-amber'
+                }`}
+              />
+              <strong className="text-[12px] font-semibold text-ink">
+                {heal.status === 'failed'
+                  ? '自动修复失败'
+                  : heal.status === 'succeeded'
+                    ? '自动修复完成'
+                    : '自动修复中'}
+              </strong>
+              <span className="ml-auto font-mono text-[10px] tabular-nums text-ink-faint">
+                {Math.max(heal.attempt, 1)}/{heal.maxAttempts}
+              </span>
+            </div>
+            <p className="m-0 text-[11px] leading-[1.55] text-ink-dim">
+              {heal.status === 'requesting' && '正在请求模型修复当前错误…'}
+              {heal.status === 'applied' && '修复结果已应用，正在验证初始化…'}
+              {heal.status === 'succeeded' && (heal.message || '修复结果已通过初始化')}
+              {heal.status === 'failed' &&
+                `${heal.message}；已恢复可用实验，可继续操作。`}
             </p>
+            {heal.status === 'failed' && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded-lg border border-transparent bg-accent-strong px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                  type="button"
+                  disabled={!heal.failed}
+                  onClick={retryFailedHeal}
+                >
+                  再试一次
+                </button>
+                <button
+                  className="rounded-lg border border-line bg-surface px-3 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                  type="button"
+                  onClick={() => {
+                    restoreLastGoodAi()
+                  }}
+                >
+                  恢复上一版本
+                </button>
+                <button
+                  className="rounded-lg border border-line bg-surface px-3 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                  type="button"
+                  onClick={resetHeal}
+                >
+                  关闭
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

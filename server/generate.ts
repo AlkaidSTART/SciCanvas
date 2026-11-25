@@ -1,8 +1,14 @@
 import { AI_ERROR_MESSAGES } from '../src/ai/errors.ts'
 import type { AiErrorCode } from '../src/ai/errors.ts'
-import { MAX_PROMPT_LENGTH, buildGenerationMessages } from '../src/ai/prompt.ts'
+import {
+  DEFAULT_REPAIR_INSTRUCTION,
+  MAX_PROMPT_LENGTH,
+  buildGenerationMessages,
+} from '../src/ai/prompt.ts'
+import type { GenerationMode, RepairDiagnostic } from '../src/ai/prompt.ts'
 import { validateGeneratedSpec } from '../src/ai/schema.ts'
 import type { GeneratedExperimentSpec } from '../src/ai/schema.ts'
+import type { ControlValue } from '../src/types/experiment.ts'
 
 export interface AiServerConfig {
   apiKey?: string
@@ -76,6 +82,73 @@ function parseModelJson(content: string): unknown {
   return JSON.parse(text)
 }
 
+const MODES: readonly GenerationMode[] = ['create', 'refine', 'repair']
+const MAX_CURRENT_PARAMS = 12
+const MAX_PARAM_KEY_LENGTH = 80
+const MAX_PARAM_TEXT_LENGTH = 200
+const MAX_DIAGNOSTIC_LENGTH = 1000
+const MAX_REPAIR_ATTEMPT = 2
+
+type ParamsReadResult =
+  | { ok: true; params: Record<string, ControlValue> }
+  | { ok: false; message: string }
+
+/** 只接受数量有限的原始值参数，避免把任意对象带入提示词。 */
+function readCurrentParams(value: unknown): ParamsReadResult {
+  if (value === undefined) return { ok: true, params: {} }
+  if (!isRecord(value)) return { ok: false, message: 'currentParams 必须是对象' }
+  const entries = Object.entries(value)
+  if (entries.length > MAX_CURRENT_PARAMS) {
+    return { ok: false, message: `currentParams 最多 ${MAX_CURRENT_PARAMS} 项` }
+  }
+  const params: Record<string, ControlValue> = {}
+  for (const [key, raw] of entries) {
+    if (!key || key.length > MAX_PARAM_KEY_LENGTH) {
+      return { ok: false, message: 'currentParams 的键名不合法' }
+    }
+    if (typeof raw === 'string') {
+      if (raw.length > MAX_PARAM_TEXT_LENGTH) {
+        return { ok: false, message: `currentParams.${key} 过长` }
+      }
+      params[key] = raw
+    } else if (typeof raw === 'boolean') {
+      params[key] = raw
+    } else if (typeof raw === 'number' && Number.isFinite(raw)) {
+      params[key] = raw
+    } else {
+      return { ok: false, message: `currentParams.${key} 必须是数字、布尔值或字符串` }
+    }
+  }
+  return { ok: true, params }
+}
+
+type DiagnosticReadResult =
+  | { ok: true; diagnostic: RepairDiagnostic }
+  | { ok: false; message: string }
+
+function readDiagnostic(value: unknown): DiagnosticReadResult {
+  if (!isRecord(value)) return { ok: false, message: 'diagnostic 必须是对象' }
+  const stage = value.stage
+  if (stage !== 'init' && stage !== 'first-frame' && stage !== 'runtime') {
+    return { ok: false, message: 'diagnostic.stage 必须是 init / first-frame / runtime' }
+  }
+  const message = typeof value.message === 'string' ? value.message.trim() : ''
+  if (!message) return { ok: false, message: 'diagnostic.message 必须是非空字符串' }
+  if (message.length > MAX_DIAGNOSTIC_LENGTH) {
+    return { ok: false, message: `diagnostic.message 不能超过 ${MAX_DIAGNOSTIC_LENGTH} 个字符` }
+  }
+  const attempt = value.attempt
+  if (
+    typeof attempt !== 'number' ||
+    !Number.isInteger(attempt) ||
+    attempt < 1 ||
+    attempt > MAX_REPAIR_ATTEMPT
+  ) {
+    return { ok: false, message: `diagnostic.attempt 必须是 1 到 ${MAX_REPAIR_ATTEMPT} 的整数` }
+  }
+  return { ok: true, diagnostic: { stage, message, attempt } }
+}
+
 /**
  * 服务端生成入口：纯函数式处理，便于测试注入 fetch 与超时。
  * 凭证只用于发往模型服务的请求头，不会写入响应。
@@ -84,11 +157,51 @@ export async function generateExperiment(
   input: unknown,
   config: AiServerConfig,
 ): Promise<GenerateResult> {
-  const prompt = isRecord(input) && typeof input.prompt === 'string' ? input.prompt.trim() : ''
+  const rawMode = isRecord(input) ? input.mode : undefined
+  if (rawMode !== undefined && !MODES.includes(rawMode as GenerationMode)) {
+    return failure(400, 'bad_request', 'mode 只能是 create / refine / repair')
+  }
+  const mode: GenerationMode = (rawMode as GenerationMode | undefined) ?? 'create'
+
+  const rawPrompt =
+    isRecord(input) && typeof input.prompt === 'string' ? input.prompt.trim() : ''
+  const prompt = mode === 'repair' && !rawPrompt ? DEFAULT_REPAIR_INSTRUCTION : rawPrompt
   if (!prompt) return failure(400, 'bad_request', '请先描述想探索的科学问题')
   if (prompt.length > MAX_PROMPT_LENGTH) {
     return failure(400, 'bad_request', `描述不能超过 ${MAX_PROMPT_LENGTH} 个字符`)
   }
+
+  let currentSpec: GeneratedExperimentSpec | undefined
+  if (mode !== 'create') {
+    const rawSpec = isRecord(input) ? input.currentSpec : undefined
+    if (rawSpec === undefined) {
+      return failure(400, 'bad_request', '当前请求缺少实验上下文 currentSpec')
+    }
+    const validation = validateGeneratedSpec(rawSpec)
+    if (!validation.ok) {
+      return failure(
+        400,
+        'bad_request',
+        `当前实验上下文不合法：${validation.issues.slice(0, 2).join('；')}`,
+      )
+    }
+    currentSpec = validation.spec
+  }
+
+  let currentParams: Record<string, ControlValue> | undefined
+  if (mode === 'refine') {
+    const parsed = readCurrentParams(isRecord(input) ? input.currentParams : undefined)
+    if (!parsed.ok) return failure(400, 'bad_request', parsed.message)
+    currentParams = parsed.params
+  }
+
+  let diagnostic: RepairDiagnostic | undefined
+  if (mode === 'repair') {
+    const parsed = readDiagnostic(isRecord(input) ? input.diagnostic : undefined)
+    if (!parsed.ok) return failure(400, 'bad_request', parsed.message)
+    diagnostic = parsed.diagnostic
+  }
+
   if (!config.apiKey) return failure(503, 'not_configured')
 
   const timeoutMs =
@@ -108,8 +221,14 @@ export async function generateExperiment(
       },
       body: JSON.stringify({
         model: config.model,
-        messages: buildGenerationMessages(prompt),
-        temperature: 0.6,
+        messages: buildGenerationMessages({
+          prompt,
+          mode,
+          currentSpec,
+          currentParams,
+          diagnostic,
+        }),
+        temperature: mode === 'repair' ? 0.3 : mode === 'refine' ? 0.5 : 0.6,
         response_format: { type: 'json_object' },
       }),
       signal: controller.signal,
