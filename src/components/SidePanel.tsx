@@ -18,7 +18,7 @@ export function SidePanel() {
   const status = useWorkbenchStore((state) => state.status)
 
   return (
-    <aside className="flex flex-col gap-6 overflow-y-auto border-r border-line bg-[linear-gradient(180deg,#ffffff,#f8fafd)] px-4 py-[18px] max-[980px]:flex-row max-[980px]:items-stretch max-[980px]:gap-3.5 max-[980px]:overflow-x-auto max-[980px]:overflow-y-hidden max-[980px]:border-b max-[980px]:border-r-0 max-[980px]:px-3 max-[980px]:py-2.5">
+    <aside className="flex flex-col gap-6 overflow-y-auto border-r border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] px-4 py-[18px] max-[980px]:flex-row max-[980px]:items-stretch max-[980px]:gap-3.5 max-[980px]:overflow-x-auto max-[980px]:overflow-y-hidden max-[980px]:border-b max-[980px]:border-r-0 max-[980px]:px-3 max-[980px]:py-2.5">
       <section className="flex flex-col gap-2.5 max-[980px]:min-w-[230px] max-[980px]:flex-none">
         <h2 className="m-0 flex items-center justify-between gap-2 text-[10.5px] font-semibold uppercase tracking-[0.13em] text-ink-faint">
           预设实验
@@ -27,7 +27,7 @@ export function SidePanel() {
           </span>
         </h2>
         <button
-          className="flex w-full items-center gap-2.5 rounded-[10px] border border-accent-line bg-[linear-gradient(135deg,rgba(168,198,234,0.24),rgba(168,198,234,0.06))] px-[11px] py-2.5 text-left shadow-[0_1px_2px_rgba(31,45,61,0.04)]"
+          className="flex w-full items-center gap-2.5 rounded-[10px] border border-[rgba(224,162,121,0.42)] bg-[linear-gradient(135deg,rgba(240,205,178,0.42),rgba(240,205,178,0.12))] px-[11px] py-2.5 text-left shadow-[0_1px_2px_rgba(58,51,43,0.05)]"
           type="button"
           aria-current="true"
         >
@@ -60,7 +60,7 @@ export function SidePanel() {
             placeholder="描述想探索的科学机理，或粘贴论文公式…（M3 开放）"
           />
           <button
-            className="rounded-lg border border-transparent bg-accent-strong px-3.5 py-[7px] text-xs font-semibold text-white transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+            className="rounded-lg border border-transparent bg-accent-strong px-3.5 py-[7px] text-xs font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
             type="button"
             disabled
           >

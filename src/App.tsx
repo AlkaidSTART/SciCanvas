@@ -10,7 +10,7 @@ function App() {
   const runtime = useExperimentRuntime(canvasRef)
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,198,234,0.22),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(246,209,196,0.18),transparent_60%)]">
+    <div className="flex h-svh flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,190,214,0.38),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(224,162,121,0.26),transparent_60%)]">
       <TopBar />
       <div className="grid min-h-0 flex-1 grid-cols-[264px_minmax(0,1fr)] max-[980px]:grid-cols-1 max-[980px]:grid-rows-[auto_minmax(0,1fr)]">
         <SidePanel />

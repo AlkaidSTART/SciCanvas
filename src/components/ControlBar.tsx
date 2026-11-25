@@ -23,7 +23,7 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
   const disabled = status === 'error'
 
   return (
-    <footer className="flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#ffffff,#fbfcfe)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px]">
+    <footer className="flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#fcf9f2,#f8f2e8)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px]">
       <div className="flex flex-wrap items-center gap-3.5 max-[640px]:gap-2.5">
         <div className="flex items-center gap-2">
           <button
@@ -37,7 +37,7 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
             <span>{running ? '暂停' : '播放'}</span>
           </button>
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onStep}
             disabled={disabled}
@@ -47,7 +47,7 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
             <span>单步</span>
           </button>
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onReset}
             aria-label="重置仿真"
@@ -156,7 +156,7 @@ function ControlField({ control, value, disabled, onChange }: ControlFieldProps)
             onChange={(event) => onChange(control.key, event.target.checked)}
           />
           <span className="relative h-5 w-[38px] rounded-full border border-line bg-[rgba(34,55,84,0.14)] transition-colors peer-checked:border-accent-strong/50 peer-checked:bg-accent/40 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-45" />
-          <span className="absolute left-0.5 top-0.5 size-3.5 rounded-full bg-white shadow-[0_1px_3px_rgba(31,45,61,0.18)] transition-all peer-checked:translate-x-[18px] peer-checked:bg-white" />
+          <span className="absolute left-0.5 top-0.5 size-3.5 rounded-full bg-surface shadow-[0_1px_3px_rgba(58,51,43,0.2)] transition-all peer-checked:translate-x-[18px] peer-checked:bg-surface" />
         </label>
       </div>
     )

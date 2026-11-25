@@ -1,32 +1,34 @@
 @import 'tailwindcss';
 
 @theme {
-  /* 表面：接近纯白，带极淡冷调，保证科研图表区域干净 */
-  --color-canvas: #fbfcfe;
-  --color-surface: #ffffff;
-  --color-surface-soft: #f5f8fb;
-  --color-panel: #ffffff;
-  --color-panel-deep: #ffffff;
+  /* 表面：米白纸感，避免纯白长时间注视造成疲劳 */
+  --color-canvas: #f6f1e7;
+  --color-surface: #fbf7ef;
+  --color-surface-soft: #f1ebdf;
+  --color-panel: #fcf9f2;
+  --color-panel-deep: #fcf9f2;
 
-  /* 分隔线与文本：低饱和石板灰，长时间阅读不刺眼 */
-  --color-line: rgb(34 55 84 / 0.09);
-  --color-line-strong: rgb(34 55 84 / 0.18);
-  --color-ink: #23303f;
-  --color-ink-dim: #5b6979;
-  --color-ink-faint: #8e9bab;
+  /* 分隔线与文本：暖灰石板色，像纸张与铅笔 */
+  --color-line: rgb(92 74 54 / 0.1);
+  --color-line-strong: rgb(92 74 54 / 0.2);
+  --color-ink: #3a332b;
+  --color-ink-dim: #6d6154;
+  --color-ink-faint: #9b8f81;
 
-  /* 主色：马卡龙蓝，填充柔和、描边清晰 */
-  --color-accent: #6d9ccc;
-  --color-accent-strong: #4a78a6;
-  --color-accent-soft: rgb(126 168 214 / 0.16);
-  --color-accent-line: rgb(109 156 204 / 0.32);
+  /* 主色：低饱和雾霾蓝，落在米白上更柔和 */
+  --color-accent: #7c9dbb;
+  --color-accent-strong: #4f7292;
+  --color-accent-soft: rgb(154 180 204 / 0.2);
+  --color-accent-line: rgb(124 157 187 / 0.34);
 
-  /* 辅助色：薄荷 / 蜜杏 / 樱花 / 薰衣草 */
-  --color-mint: #67b89a;
-  --color-rose: #d97d88;
-  --color-lilac: #a997cf;
+  /* 辅助色：鼠尾草绿 / 杏桃 / 樱花 / 香芋 / 奶油黄 */
+  --color-mint: #7faf94;
+  --color-peach: #e0a279;
+  --color-rose: #d98e8e;
+  --color-lilac: #a996c4;
   --color-amber: #d9a24a;
-  --color-danger: #d97d88;
+  --color-butter: #e6c57f;
+  --color-danger: #d98e8e;
 
   --font-sans:
     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
@@ -85,7 +87,7 @@
   }
 
   ::selection {
-    background: rgb(126 168 214 / 0.35);
+    background: rgb(230 197 127 / 0.38);
   }
 
   :focus-visible {
@@ -109,7 +111,7 @@
   .range-input::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 999px;
-    background: linear-gradient(90deg, rgb(109 156 204 / 0.55), rgb(109 156 204 / 0.14));
+    background: linear-gradient(90deg, rgb(124 157 187 / 0.55), rgb(124 157 187 / 0.16));
   }
 
   .range-input::-webkit-slider-thumb {
@@ -120,19 +122,19 @@
     margin-top: -5px;
     border-radius: 50%;
     border: 2px solid var(--color-accent-strong);
-    background: #ffffff;
-    box-shadow: 0 0 0 4px rgb(92 140 191 / 0.12);
+    background: #fcf9f2;
+    box-shadow: 0 0 0 4px rgb(124 157 187 / 0.14);
     transition: box-shadow 0.15s ease;
   }
 
   .range-input:hover::-webkit-slider-thumb {
-    box-shadow: 0 0 0 5px rgb(92 140 191 / 0.2);
+    box-shadow: 0 0 0 5px rgb(124 157 187 / 0.22);
   }
 
   .range-input::-moz-range-track {
     height: 4px;
     border-radius: 999px;
-    background: linear-gradient(90deg, rgb(109 156 204 / 0.55), rgb(109 156 204 / 0.14));
+    background: linear-gradient(90deg, rgb(124 157 187 / 0.55), rgb(124 157 187 / 0.16));
   }
 
   .range-input::-moz-range-thumb {
@@ -140,7 +142,7 @@
     height: 10px;
     border-radius: 50%;
     border: 2px solid var(--color-accent-strong);
-    background: #ffffff;
+    background: #fcf9f2;
   }
 
   .range-input:disabled {

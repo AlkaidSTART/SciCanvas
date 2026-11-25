@@ -24,21 +24,21 @@ const MAX_TRAIL = 600
 const TRAIL_SAMPLE_INTERVAL = 2
 
 const COLORS = {
-  background: '#FFFFFF',
-  grid: 'rgba(49, 78, 114, 0.055)',
-  axis: 'rgba(49, 78, 114, 0.26)',
-  text: '#6B7889',
-  textStrong: '#26313F',
-  accent: '#5C8CBF',
-  accentSoft: 'rgba(92, 140, 191, 0.5)',
-  accentFill: 'rgba(126, 168, 214, 0.18)',
-  spring: '#6FB59A',
-  amber: '#D9A24A',
-  amberText: '#A9752A',
-  wall: 'rgba(90, 110, 136, 0.5)',
-  guide: 'rgba(90, 110, 136, 0.3)',
-  faint: 'rgba(90, 110, 136, 0.22)',
-  halo: 'rgba(92, 140, 191, 0.15)',
+  background: '#FBF7EF',
+  grid: 'rgba(120, 100, 78, 0.06)',
+  axis: 'rgba(120, 100, 78, 0.24)',
+  text: '#7D7062',
+  textStrong: '#3A332B',
+  accent: '#7C9DBB',
+  accentSoft: 'rgba(124, 157, 187, 0.55)',
+  accentFill: 'rgba(154, 180, 204, 0.22)',
+  spring: '#87B79B',
+  amber: '#E0A279',
+  amberText: '#A4683B',
+  wall: 'rgba(120, 100, 78, 0.45)',
+  guide: 'rgba(120, 100, 78, 0.28)',
+  faint: 'rgba(120, 100, 78, 0.2)',
+  halo: 'rgba(124, 157, 187, 0.2)',
 }
 
 function readNumber(params: ParamValues, key: string, fallback: number): number {
@@ -190,7 +190,7 @@ function drawOscillator(
   width: number,
   height: number,
 ): void {
-  const centerY = height * 0.56
+  const centerY = height * 0.62
   const wallX = Math.max(28, width * 0.07)
   const padRight = 44
   const available = Math.max(120, width - wallX - padRight)
@@ -237,7 +237,7 @@ function drawOscillator(
   ctx.fillStyle = COLORS.accentFill
   ctx.strokeStyle = COLORS.accent
   ctx.lineWidth = 1.5
-  ctx.shadowColor = 'rgba(31, 45, 61, 0.12)'
+  ctx.shadowColor = 'rgba(58, 51, 43, 0.12)'
   ctx.shadowBlur = 14
   ctx.shadowOffsetY = 4
   ctx.beginPath()
@@ -295,7 +295,7 @@ function drawPhasePortrait(
   height: number,
 ): void {
   const centerX = panelX + panelWidth / 2
-  const centerY = height / 2
+  const centerY = height * 0.62
   const paddingX = Math.min(46, panelWidth * 0.18)
   const paddingY = Math.min(72, height * 0.16)
   const xRange = Math.max(1, envelopeOf(state.trail, 'x')) * 1.1
