@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { GeneratedExperimentSpec } from '../ai/schema'
 import {
   buildWorkspaceRecord,
+  groupWorkspaceEntries,
   normalizeStoredRecord,
+  resolveRecordGroupId,
+  resolveRecordGroupTitle,
   sanitizeRecordTitle,
   sortWorkspaceEntries,
 } from './records'
@@ -197,5 +200,43 @@ describe('M7 列表排序', () => {
       make('d', true, 2000),
     ])
     expect(sorted.map((entry) => entry.id)).toEqual(['d', 'b', 'c', 'a'])
+  })
+
+  it('按实验组聚合多个绘画窗口并按最近更新时间排序', () => {
+    const make = (overrides: Partial<WorkspaceEntry>): WorkspaceEntry => ({
+      ...baseRecord(overrides),
+      status: 'ok',
+    })
+    const w1 = make({
+      id: 'w1',
+      groupId: 'exp-a',
+      groupTitle: '阻尼实验组',
+      title: '基础单摆',
+      updatedAt: 1000,
+    })
+    const w2 = make({
+      id: 'w2',
+      groupId: 'exp-a',
+      groupTitle: '阻尼实验组',
+      title: '随机噪声对比',
+      updatedAt: 3000,
+      favorite: true,
+    })
+    const w3 = make({
+      id: 'w3',
+      title: '独立绘画窗口',
+      updatedAt: 2000,
+    })
+
+    expect(resolveRecordGroupId(w3)).toBe('exp:w3')
+    expect(resolveRecordGroupTitle(w3)).toBe('独立绘画窗口')
+
+    const groups = groupWorkspaceEntries([w1, w2, w3])
+    expect(groups).toHaveLength(2)
+    expect(groups[0].groupId).toBe('exp-a')
+    expect(groups[0].title).toBe('阻尼实验组')
+    expect(groups[0].windows.map((w) => w.id)).toEqual(['w2', 'w1'])
+    expect(groups[0].favoriteCount).toBe(1)
+    expect(groups[1].groupId).toBe('exp:w3')
   })
 })

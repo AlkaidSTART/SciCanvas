@@ -51,6 +51,7 @@ beforeEach(() => {
     hydrated: false,
     hydrating: false,
     entries: [],
+    openWindowIds: [],
     modelConfig: null,
     storageError: null,
     saving: false,
@@ -152,5 +153,32 @@ describe('M7 工作区状态', () => {
     expect(state.entries[0].title).toBe('阻尼振动')
     expect(state.storageError).toMatchObject({ code: 'quota' })
     expect(state.feedback).toMatchObject({ tone: 'error' })
+  })
+
+  it('支持同实验内复制新绘画窗口、重命名实验组与关闭窗口标签', async () => {
+    useWorkspaceStore.setState({
+      entries: [entry({ id: 'win-1', groupId: 'exp-1', groupTitle: '振动实验', title: '窗口 1' })],
+      openWindowIds: ['win-1'],
+    })
+
+    const dup = await useWorkspaceStore.getState().duplicateWindow('win-1')
+    expect(dup).not.toBeNull()
+    expect(dup?.groupId).toBe('exp-1')
+    expect(dup?.groupTitle).toBe('振动实验')
+    expect(useWorkspaceStore.getState().entries).toHaveLength(2)
+    expect(useWorkspaceStore.getState().openWindowIds).toEqual(['win-1', dup!.id])
+
+    await useWorkspaceStore.getState().renameGroup('exp-1', '受迫振动对比组')
+    expect(
+      useWorkspaceStore.getState().entries.every((item) => item.groupTitle === '受迫振动对比组'),
+    ).toBe(true)
+
+    useWorkspaceStore.getState().closeWindow(dup!.id)
+    expect(useWorkspaceStore.getState().openWindowIds).toEqual(['win-1'])
+    expect(useWorkspaceStore.getState().entries).toHaveLength(2)
+
+    await useWorkspaceStore.getState().deleteGroup('exp-1')
+    expect(useWorkspaceStore.getState().entries).toHaveLength(0)
+    expect(useWorkspaceStore.getState().openWindowIds).toEqual([])
   })
 })
