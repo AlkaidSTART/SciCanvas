@@ -1,7 +1,10 @@
+import { useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { describeControlValue, isCornerCaseActive } from '../runtime/params'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import type { ControlDefinition, ControlValue } from '../types/experiment'
 import { PauseIcon, PlayIcon, ResetIcon, StepIcon } from './icons'
+import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 
 interface ControlBarProps {
   onTogglePlay: () => void
@@ -21,12 +24,19 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
   const setParam = useWorkbenchStore((state) => state.setParam)
   const applyCornerCase = useWorkbenchStore((state) => state.applyCornerCase)
 
+  const [resetSpin, setResetSpin] = useState(0)
+
   const running = status === 'running'
   const disabled = status === 'error'
   const cornerCases = experiment.cornerCases ?? []
   // 桌面工作台模式下参数与边界态停靠在右侧检查器，底部保持紧凑播放控制条；
   // 演示模式或窄屏（< 960px）保留完整底部参数区。
   const hideInlineControlsOnDesktop = !presentation
+
+  const handleReset = () => {
+    setResetSpin((count) => count + 1)
+    onReset()
+  }
 
   return (
     <footer
@@ -38,7 +48,8 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
     >
       <div className="flex flex-wrap items-center gap-3 max-[640px]:gap-2">
         <div className="flex items-center gap-1.5">
-          <button
+          <motion.button
+            whileTap={disabled ? undefined : TAP_BUTTON}
             className="inline-flex items-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-[11px] py-[6px] text-xs font-medium text-accent-strong transition-colors enabled:hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onTogglePlay}
@@ -46,10 +57,26 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
             aria-label={running ? '暂停仿真' : '播放仿真'}
             title="播放 / 暂停 (Space)"
           >
-            {running ? <PauseIcon className="size-[13px] flex-none" /> : <PlayIcon className="size-[13px] flex-none" />}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={running ? 'pause' : 'play'}
+                initial={{ opacity: 0, scale: 0.75 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.75 }}
+                transition={{ duration: 0.12 }}
+                className="inline-flex items-center"
+              >
+                {running ? (
+                  <PauseIcon className="size-[13px] flex-none" />
+                ) : (
+                  <PlayIcon className="size-[13px] flex-none" />
+                )}
+              </motion.span>
+            </AnimatePresence>
             <span>{running ? '暂停' : '播放'}</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileTap={disabled ? undefined : TAP_BUTTON}
             className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[10px] py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onStep}
@@ -59,17 +86,24 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
           >
             <StepIcon className="size-[13px] flex-none" />
             <span>单步</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileTap={TAP_BUTTON}
             className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[10px] py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
-            onClick={onReset}
+            onClick={handleReset}
             aria-label="重置仿真"
             title="重置仿真 (R)"
           >
-            <ResetIcon className="size-[13px] flex-none" />
+            <motion.span
+              animate={{ rotate: resetSpin * -360 }}
+              transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+              className="inline-flex items-center"
+            >
+              <ResetIcon className="size-[13px] flex-none" />
+            </motion.span>
             <span>重置</span>
-          </button>
+          </motion.button>
         </div>
 
         <div
@@ -80,14 +114,21 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
           {SPEED_OPTIONS.map((option) => (
             <button
               key={option}
-              className={`rounded-md px-[8px] py-0.5 font-mono text-[11px] transition-colors ${
-                speed === option ? 'bg-accent-soft text-accent-strong' : 'text-ink-faint hover:text-ink-dim'
+              className={`relative rounded-md px-[8px] py-0.5 font-mono text-[11px] transition-colors ${
+                speed === option ? 'text-accent-strong' : 'text-ink-faint hover:text-ink-dim'
               }`}
               type="button"
               onClick={() => setSpeed(option)}
               aria-pressed={speed === option}
             >
-              {option}×
+              {speed === option && (
+                <motion.span
+                  layoutId="speed-active-pill"
+                  transition={SPRING_SNAPPY}
+                  className="absolute inset-0 rounded-md bg-accent-soft"
+                />
+              )}
+              <span className="relative z-[1]">{option}×</span>
             </button>
           ))}
         </div>
@@ -121,8 +162,10 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
           {cornerCases.map((cornerCase) => {
             const active = isCornerCaseActive(cornerCase, params)
             return (
-              <button
+              <motion.button
                 key={cornerCase.id}
+                whileTap={disabled ? undefined : TAP_BUTTON}
+                transition={FAST_TRANSITION}
                 className={`rounded-full border px-2.5 py-[4px] text-[10.5px] leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                   active
                     ? 'border-accent-line bg-accent-soft text-accent-strong'
@@ -135,7 +178,7 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
                 onClick={() => applyCornerCase(cornerCase.id)}
               >
                 {cornerCase.label}
-              </button>
+              </motion.button>
             )
           })}
         </div>
@@ -226,7 +269,11 @@ export function ControlField({
             onChange={(event) => onChange(control.key, event.target.checked)}
           />
           <span className="relative h-5 w-[38px] rounded-full border border-line bg-[rgba(34,55,84,0.14)] transition-colors peer-checked:border-accent-strong/50 peer-checked:bg-accent/40 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent peer-disabled:opacity-45" />
-          <span className="absolute left-0.5 top-0.5 size-3.5 rounded-full bg-surface shadow-[0_1px_3px_rgba(58,51,43,0.2)] transition-all peer-checked:translate-x-[18px] peer-checked:bg-surface" />
+          <motion.span
+            animate={{ x: checked ? 18 : 0 }}
+            transition={SPRING_SNAPPY}
+            className="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-surface shadow-[0_1px_3px_rgba(58,51,43,0.2)]"
+          />
         </label>
       </div>
     )

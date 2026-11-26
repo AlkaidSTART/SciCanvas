@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react'
 import katex from 'katex'
+import { AnimatePresence, motion } from 'motion/react'
 import { isCornerCaseActive } from '../runtime/params'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { ControlField } from './ControlBar'
+import {
+  COLLAPSE_VARIANTS,
+  FAST_TRANSITION,
+  MEDIUM_TRANSITION,
+  TAP_BUTTON,
+} from './motion'
 import { TelemetryMetrics } from './StageOverlays'
 
 /**
@@ -42,7 +49,10 @@ export function InspectorPanel() {
     : null
 
   return (
-    <aside
+    <motion.aside
+      initial={{ opacity: 0, x: 14 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={MEDIUM_TRANSITION}
       className="hidden min-h-0 flex-col overflow-hidden border-l border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] min-[960px]:flex"
       aria-label="实验参数检查器"
     >
@@ -57,7 +67,8 @@ export function InspectorPanel() {
             </span>
           )}
         </div>
-        <button
+        <motion.button
+          whileTap={disabled ? undefined : TAP_BUTTON}
           className="rounded-md border border-line bg-surface px-2 py-[2px] text-[10px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
           type="button"
           disabled={disabled}
@@ -65,7 +76,7 @@ export function InspectorPanel() {
           title="将当前实验的所有参数恢复为默认值"
         >
           默认参数
-        </button>
+        </motion.button>
       </div>
 
       <div className="workbench-scroll min-h-0 flex-1 divide-y divide-line overflow-y-auto">
@@ -83,15 +94,33 @@ export function InspectorPanel() {
             </button>
           </div>
 
-          <div
-            className="workbench-scroll overflow-x-auto overflow-y-hidden rounded-[9px] border border-line bg-surface px-2.5 py-2 text-ink [&_.katex-display]:m-0 [&_.katex]:text-[0.95em]"
-            // KaTeX 输出的 HTML 由本地库生成，不包含外部输入脚本
-            dangerouslySetInnerHTML={{ __html: formulaHtml }}
-          />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={experiment.id}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={FAST_TRANSITION}
+              className="workbench-scroll overflow-x-auto overflow-y-hidden rounded-[9px] border border-line bg-surface px-2.5 py-2 text-ink [&_.katex-display]:m-0 [&_.katex]:text-[0.95em]"
+              // KaTeX 输出的 HTML 由本地库生成，不包含外部输入脚本
+              dangerouslySetInnerHTML={{ __html: formulaHtml }}
+            />
+          </AnimatePresence>
 
-          {insightExpanded && (
-            <p className="m-0 text-[11px] leading-[1.6] text-ink-dim">{experiment.insight}</p>
-          )}
+          <AnimatePresence initial={false}>
+            {insightExpanded && (
+              <motion.p
+                key="inspector-insight"
+                variants={COLLAPSE_VARIANTS}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="m-0 text-[11px] leading-[1.6] text-ink-dim"
+              >
+                {experiment.insight}
+              </motion.p>
+            )}
+          </AnimatePresence>
         </section>
 
         {cornerCases.length > 0 && (
@@ -106,8 +135,9 @@ export function InspectorPanel() {
               {cornerCases.map((cornerCase) => {
                 const active = isCornerCaseActive(cornerCase, params)
                 return (
-                  <button
+                  <motion.button
                     key={cornerCase.id}
+                    whileTap={disabled ? undefined : TAP_BUTTON}
                     className={`rounded-full border px-2.5 py-[4px] text-[10.5px] leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
                       active
                         ? 'border-accent-line bg-accent-soft text-accent-strong'
@@ -120,7 +150,7 @@ export function InspectorPanel() {
                     onClick={() => applyCornerCase(cornerCase.id)}
                   >
                     {cornerCase.label}
-                  </button>
+                  </motion.button>
                 )
               })}
             </div>
@@ -137,7 +167,13 @@ export function InspectorPanel() {
             </span>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <motion.div
+            key={`controls-${experiment.id}`}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={FAST_TRANSITION}
+            className="flex flex-col gap-3"
+          >
             {experiment.controls.map((control) => (
               <ControlField
                 key={control.key}
@@ -148,7 +184,7 @@ export function InspectorPanel() {
                 idPrefix="inspector"
               />
             ))}
-          </div>
+          </motion.div>
         </section>
 
         {telemetry && (
@@ -166,6 +202,6 @@ export function InspectorPanel() {
           </section>
         )}
       </div>
-    </aside>
+    </motion.aside>
   )
 }

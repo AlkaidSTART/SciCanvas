@@ -39,8 +39,6 @@ interface PaperImageInputProps {
 export function PaperImageInput({ onImageLoaded }: PaperImageInputProps = {}) {
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
   const presentation = useWorkbenchStore((state) => state.presentation)
-  const pendingImage = useFloatingBallStore((state) => state.pendingImage)
-  const setPendingImage = useFloatingBallStore((state) => state.setPendingImage)
 
   const [image, setImage] = useState<LoadedImage | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
@@ -254,212 +252,252 @@ export function PaperImageInput({ onImageLoaded }: PaperImageInputProps = {}) {
         }}
       />
 
-      {!image && (
-        <button
-          className="flex flex-col items-center gap-1 rounded-[9px] border border-dashed border-[rgba(138,118,168,0.45)] bg-surface/60 px-3 py-4 text-center transition-colors enabled:hover:border-[rgba(138,118,168,0.7)] enabled:hover:bg-[rgba(138,118,168,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
-          type="button"
-          disabled={recognizing || generating}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <span className="text-[11px] font-medium text-ink-dim">
-            粘贴截图（⌘V）或点击选择
-          </span>
-          <small className="text-[9.5px] text-ink-faint">
-            单张 PNG / JPEG / WebP，不超过 {formatBytes(MAX_IMAGE_BYTES)}
-          </small>
-        </button>
-      )}
-
-      {image && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 rounded-[8px] border border-line bg-surface px-2 py-1.5">
-            <img
-              src={image.dataUrl}
-              alt="待识别的论文截图预览"
-              className="h-12 w-16 flex-none rounded-[5px] border border-line bg-canvas object-contain"
-            />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[11px] text-ink" title={image.name}>
-                {image.name}
-              </span>
-              <small className="font-mono text-[9.5px] text-ink-faint">
-                {image.mime.replace('image/', '').toUpperCase()} · {formatBytes(image.size)}
-              </small>
+      <AnimatePresence mode="wait" initial={false}>
+        {!image ? (
+          <motion.button
+            key="image-dropzone"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={FAST_TRANSITION}
+            whileTap={recognizing || generating ? undefined : TAP_BUTTON}
+            className="flex flex-col items-center gap-1 rounded-[9px] border border-dashed border-[rgba(138,118,168,0.45)] bg-surface/60 px-3 py-4 text-center transition-colors enabled:hover:border-[rgba(138,118,168,0.7)] enabled:hover:bg-[rgba(138,118,168,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            disabled={recognizing || generating}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <span className="text-[11px] font-medium text-ink-dim">
+              粘贴截图（⌘V）或点击选择
+            </span>
+            <small className="text-[9.5px] text-ink-faint">
+              单张 PNG / JPEG / WebP，不超过 {formatBytes(MAX_IMAGE_BYTES)}
+            </small>
+          </motion.button>
+        ) : (
+          <motion.div
+            key="image-preview"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={FAST_TRANSITION}
+            className="flex flex-col gap-2"
+          >
+            <div className="flex items-center gap-2 rounded-[8px] border border-line bg-surface px-2 py-1.5">
+              <img
+                src={image.dataUrl}
+                alt="待识别的论文截图预览"
+                className="h-12 w-16 flex-none rounded-[5px] border border-line bg-canvas object-contain"
+              />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[11px] text-ink" title={image.name}>
+                  {image.name}
+                </span>
+                <small className="font-mono text-[9.5px] text-ink-faint">
+                  {image.mime.replace('image/', '').toUpperCase()} · {formatBytes(image.size)}
+                </small>
+              </div>
             </div>
-          </div>
 
-          {!draft && (
-            <div className="flex gap-1.5">
-              <button
+            {!draft && (
+              <div className="flex gap-1.5">
+                <motion.button
+                  whileTap={recognizing || generating ? undefined : TAP_BUTTON}
+                  className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
+                  type="button"
+                  disabled={recognizing || generating}
+                  onClick={() => void handleRecognize()}
+                >
+                  {recognizing ? '识别中…' : '识别截图'}
+                </motion.button>
+                {recognizing ? (
+                  <motion.button
+                    whileTap={TAP_BUTTON}
+                    className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                    type="button"
+                    onClick={handleCancelRecognize}
+                  >
+                    取消
+                  </motion.button>
+                ) : (
+                  <>
+                    <motion.button
+                      whileTap={TAP_BUTTON}
+                      className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                      type="button"
+                      disabled={generating}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      替换
+                    </motion.button>
+                    <motion.button
+                      whileTap={TAP_BUTTON}
+                      className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                      type="button"
+                      disabled={generating}
+                      onClick={handleRemoveImage}
+                    >
+                      移除
+                    </motion.button>
+                  </>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {imageError && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={FAST_TRANSITION}
+            className="m-0 rounded-[9px] border border-rose/30 bg-rose/[0.1] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
+            role="alert"
+          >
+            {imageError}
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {draft && recognition && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6 }}
+            transition={FAST_TRANSITION}
+            className="flex flex-col gap-2 rounded-[9px] border border-[rgba(138,118,168,0.35)] bg-surface p-2.5"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="m-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6d5a7d]">
+                确认识别内容
+              </h4>
+              <span className="whitespace-nowrap font-mono text-[9px] text-ink-faint">
+                {confidenceLabel}
+              </span>
+            </div>
+
+            {recognition.uncertain.length > 0 && (
+              <div className="rounded-[7px] border border-[rgba(217,162,74,0.35)] bg-[rgba(217,162,74,0.1)] px-2 py-1.5">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#9a7229]">
+                  需要确认
+                </span>
+                <ul className="m-0 mt-1 list-disc pl-3.5 text-[10px] leading-[1.5] text-[#82611f]">
+                  {recognition.uncertain.map((item, index) => (
+                    <li key={`${index}-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[9.5px] text-ink-faint">公式（LaTeX，可留空）</span>
+              <textarea
+                className={fieldClass}
+                rows={2}
+                value={draft.formulaLatex}
+                disabled={generating}
+                aria-label="识别出的公式"
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current ? { ...current, formulaLatex: event.target.value } : current,
+                  )
+                }
+              />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[9.5px] text-ink-faint">机理说明</span>
+              <textarea
+                className={fieldClass}
+                rows={4}
+                value={draft.description}
+                disabled={generating}
+                aria-label="识别出的机理说明"
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current ? { ...current, description: event.target.value } : current,
+                  )
+                }
+              />
+            </label>
+
+            {recognition.variables.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[9.5px] text-ink-faint">变量</span>
+                <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                  {recognition.variables.map((variable, index) => (
+                    <li
+                      key={`${index}-${variable.symbol}`}
+                      className="flex items-baseline gap-1.5 text-[10px] leading-[1.45] text-ink-dim"
+                    >
+                      <code className="rounded-[4px] border border-line bg-surface-soft px-1 py-[1px] font-mono text-[9.5px] text-accent-strong">
+                        {variable.symbol}
+                      </code>
+                      <span className="min-w-0 flex-1">{variable.meaning}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5">
+              <motion.button
+                whileTap={generating ? undefined : TAP_BUTTON}
                 className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
                 type="button"
-                disabled={recognizing || generating}
-                onClick={() => void handleRecognize()}
+                disabled={generating}
+                onClick={() => void handleGenerate()}
               >
-                {recognizing ? '识别中…' : '识别截图'}
-              </button>
-              {recognizing ? (
-                <button
+                {generating ? '生成中…' : '确认并生成实验'}
+              </motion.button>
+              {generating ? (
+                <motion.button
+                  whileTap={TAP_BUTTON}
                   className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
                   type="button"
-                  onClick={handleCancelRecognize}
+                  onClick={handleCancelGenerate}
                 >
                   取消
-                </button>
+                </motion.button>
               ) : (
-                <>
-                  <button
-                    className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
-                    type="button"
-                    disabled={generating}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    替换
-                  </button>
-                  <button
-                    className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
-                    type="button"
-                    disabled={generating}
-                    onClick={handleRemoveImage}
-                  >
-                    移除
-                  </button>
-                </>
+                <motion.button
+                  whileTap={TAP_BUTTON}
+                  className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                  type="button"
+                  onClick={() => {
+                    setDraft(null)
+                    setRecognition(null)
+                    setAiError(null)
+                  }}
+                >
+                  取消
+                </motion.button>
               )}
             </div>
-          )}
-        </div>
-      )}
+            <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
+              确认后的内容会作为文本请求复用 M3 生成与 Schema 校验；生成失败时当前实验保持不变。
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {imageError && (
-        <p
-          className="m-0 rounded-[9px] border border-rose/30 bg-rose/[0.1] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
-          role="alert"
-        >
-          {imageError}
-        </p>
-      )}
-
-      {draft && recognition && (
-        <div className="flex flex-col gap-2 rounded-[9px] border border-[rgba(138,118,168,0.35)] bg-surface p-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <h4 className="m-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6d5a7d]">
-              确认识别内容
-            </h4>
-            <span className="whitespace-nowrap font-mono text-[9px] text-ink-faint">
-              {confidenceLabel}
-            </span>
-          </div>
-
-          {recognition.uncertain.length > 0 && (
-            <div className="rounded-[7px] border border-[rgba(217,162,74,0.35)] bg-[rgba(217,162,74,0.1)] px-2 py-1.5">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#9a7229]">
-                需要确认
-              </span>
-              <ul className="m-0 mt-1 list-disc pl-3.5 text-[10px] leading-[1.5] text-[#82611f]">
-                {recognition.uncertain.map((item, index) => (
-                  <li key={`${index}-${item}`}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[9.5px] text-ink-faint">公式（LaTeX，可留空）</span>
-            <textarea
-              className={fieldClass}
-              rows={2}
-              value={draft.formulaLatex}
-              disabled={generating}
-              aria-label="识别出的公式"
-              onChange={(event) =>
-                setDraft((current) =>
-                  current ? { ...current, formulaLatex: event.target.value } : current,
-                )
-              }
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[9.5px] text-ink-faint">机理说明</span>
-            <textarea
-              className={fieldClass}
-              rows={4}
-              value={draft.description}
-              disabled={generating}
-              aria-label="识别出的机理说明"
-              onChange={(event) =>
-                setDraft((current) =>
-                  current ? { ...current, description: event.target.value } : current,
-                )
-              }
-            />
-          </label>
-
-          {recognition.variables.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <span className="text-[9.5px] text-ink-faint">变量</span>
-              <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                {recognition.variables.map((variable, index) => (
-                  <li
-                    key={`${index}-${variable.symbol}`}
-                    className="flex items-baseline gap-1.5 text-[10px] leading-[1.45] text-ink-dim"
-                  >
-                    <code className="rounded-[4px] border border-line bg-surface-soft px-1 py-[1px] font-mono text-[9.5px] text-accent-strong">
-                      {variable.symbol}
-                    </code>
-                    <span className="min-w-0 flex-1">{variable.meaning}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="flex items-center gap-1.5">
-            <button
-              className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
-              type="button"
-              disabled={generating}
-              onClick={() => void handleGenerate()}
-            >
-              {generating ? '生成中…' : '确认并生成实验'}
-            </button>
-            {generating ? (
-              <button
-                className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
-                type="button"
-                onClick={handleCancelGenerate}
-              >
-                取消
-              </button>
-            ) : (
-              <button
-                className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
-                type="button"
-                onClick={() => {
-                  setDraft(null)
-                  setRecognition(null)
-                  setAiError(null)
-                }}
-              >
-                取消
-              </button>
-            )}
-          </div>
-          <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
-            确认后的内容会作为文本请求复用 M3 生成与 Schema 校验；生成失败时当前实验保持不变。
-          </p>
-        </div>
-      )}
-
-      {aiError && (
-        <p
-          className="m-0 rounded-[9px] border border-rose/30 bg-rose/[0.1] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
-          role="alert"
-        >
-          {aiError}
-        </p>
-      )}
+      <AnimatePresence>
+        {aiError && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={FAST_TRANSITION}
+            className="m-0 rounded-[9px] border border-rose/30 bg-rose/[0.1] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
+            role="alert"
+          >
+            {aiError}
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
