@@ -6,6 +6,7 @@ import { aiProxyPlugin } from './server/aiProxy.ts'
 import { standalonePlayerPlugin } from './server/playerBundle.ts'
 
 const DEFAULT_TASK_TIMEOUT_MS = 45_000
+const host = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -14,6 +15,22 @@ export default defineConfig(({ mode }) => {
   const timeoutMs = Number(env.AI_TIMEOUT_MS)
 
   return {
+    clearScreen: false,
+    server: {
+      port: 1420,
+      strictPort: true,
+      host: host || false,
+      hmr: host
+        ? {
+            protocol: 'ws',
+            host,
+            port: 1421,
+          }
+        : undefined,
+      watch: {
+        ignored: ['**/src-tauri/**'],
+      },
+    },
     plugins: [
       tailwindcss(),
       react(),
