@@ -24,12 +24,31 @@ fn emit_visibility(app: &AppHandle, visible: bool) {
     let _ = app.emit_to("main", FLOATING_BALL_VISIBILITY_EVENT, visible);
 }
 
+fn show_ball_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let win = window.clone();
+        app.run_on_main_thread(move || {
+            if let Ok(ns_window) = win.ns_window() {
+                macos_capture::show_floating_ball_window(ns_window);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        window.show().map_err(|e| e.to_string())
+    }
+}
+
 #[tauri::command]
 pub fn floating_ball_open(app: AppHandle) -> Result<PermissionStatus, String> {
     macos_capture::ensure_frontmost_tracker();
 
     if let Some(window) = app.get_webview_window(FLOATING_BALL_LABEL) {
-        window.show().map_err(|e| e.to_string())?;
+        show_ball_window(&app, &window)?;
         emit_visibility(&app, true);
         return Ok(macos_capture::check_permissions());
     }
@@ -46,9 +65,10 @@ pub fn floating_ball_open(app: AppHandle) -> Result<PermissionStatus, String> {
     .transparent(true)
     .shadow(false)
     .always_on_top(true)
+    .visible_on_all_workspaces(true)
     .skip_taskbar(true)
     .focused(false)
-    .visible(true);
+    .visible(false);
 
     if let Ok(Some(monitor)) = app.primary_monitor() {
         let scale = monitor.scale_factor();
@@ -61,10 +81,7 @@ pub fn floating_ball_open(app: AppHandle) -> Result<PermissionStatus, String> {
     }
 
     let window = builder.build().map_err(|e| e.to_string())?;
-    #[cfg(target_os = "macos")]
-    if let Ok(ns_window) = window.ns_window() {
-        macos_capture::configure_floating_ball_window(ns_window);
-    }
+    show_ball_window(&app, &window)?;
     emit_visibility(&app, true);
     Ok(macos_capture::check_permissions())
 }
@@ -155,7 +172,7 @@ pub async fn capture_formula_screenshot(app: AppHandle) -> Result<ImageCaptureOu
         .map_err(|e| format!("截图任务失败：{e}"))?;
 
     if let Some(ball) = app.get_webview_window(FLOATING_BALL_LABEL) {
-        let _ = ball.show();
+        let _ = show_ball_window(&app, &ball);
     }
 
     if outcome.ok {

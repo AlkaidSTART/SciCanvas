@@ -2,7 +2,12 @@ import { validateGeneratedSpec } from '../ai/schema'
 import type { GeneratedExperimentSpec } from '../ai/schema'
 import type { ParamValues } from '../types/experiment'
 import { WORKSPACE_SCHEMA_VERSION } from './types'
-import type { WorkspaceEntry, WorkspaceRecord, WorkspaceSource } from './types'
+import type {
+  ExperimentGroupSummary,
+  WorkspaceEntry,
+  WorkspaceRecord,
+  WorkspaceSource,
+} from './types'
 
 const MAX_RECORD_TITLE_LENGTH = 80
 const FALLBACK_RECORD_TITLE = '未命名实验'
@@ -79,6 +84,30 @@ export function createWorkspaceRecordId(): string {
   return `ws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+export function createExperimentGroupId(): string {
+  const cryptoObject = globalThis.crypto
+  if (cryptoObject && typeof cryptoObject.randomUUID === 'function') {
+    return `exp-${cryptoObject.randomUUID()}`
+  }
+  return `exp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+export function resolveRecordGroupId(
+  record: Pick<WorkspaceRecord, 'id' | 'source' | 'experimentId' | 'groupId'>,
+): string {
+  const explicit = readNonEmptyString(record.groupId)
+  if (explicit) return explicit
+  if (record.source === 'preset') return `preset:${record.experimentId}`
+  return `exp:${record.id}`
+}
+
+export function resolveRecordGroupTitle(
+  record: Pick<WorkspaceRecord, 'title' | 'groupTitle'>,
+): string {
+  const explicit = readNonEmptyString(record.groupTitle)
+  return explicit ?? record.title
+}
+
 /** 只接受原始值参数，避免把任意对象带入存储或运行时。 */
 function readParams(value: unknown): ParamValues {
   const params: ParamValues = {}
@@ -94,6 +123,9 @@ function readParams(value: unknown): ParamValues {
 export interface BuildWorkspaceRecordInput {
   id: string
   existing: WorkspaceRecord | null
+  groupId?: string | null
+  groupTitle?: string | null
+  sessionId?: string | null
   source: WorkspaceSource
   experimentId: string
   title: string
@@ -129,9 +161,24 @@ export function buildWorkspaceRecord(input: BuildWorkspaceRecordInput): Workspac
     codeVersion = existing ? (codeChanged ? existing.codeVersion + 1 : existing.codeVersion) : 1
   }
 
+  const title = existing?.title ?? sanitizeRecordTitle(input.title)
+  const resolvedGroupId =
+    readNonEmptyString(input.groupId) ??
+    readNonEmptyString(existing?.groupId) ??
+    (input.source === 'preset' ? `preset:${readNonEmptyString(input.experimentId) ?? 'unknown'}` : `exp:${input.id}`)
+  const resolvedGroupTitle =
+    readNonEmptyString(input.groupTitle) ??
+    readNonEmptyString(existing?.groupTitle) ??
+    title
+  const resolvedSessionId =
+    input.sessionId !== undefined ? input.sessionId : (existing?.sessionId ?? null)
+
   return {
     id: input.id,
-    title: existing?.title ?? sanitizeRecordTitle(input.title),
+    groupId: resolvedGroupId,
+    groupTitle: sanitizeRecordTitle(resolvedGroupTitle, title),
+    ...(resolvedSessionId !== null ? { sessionId: resolvedSessionId } : {}),
+    title,
     domain: readNonEmptyString(input.domain) ?? '未分类',
     source: input.source,
     experimentId: readNonEmptyString(input.experimentId) ?? 'unknown',
@@ -148,8 +195,13 @@ export function buildWorkspaceRecord(input: BuildWorkspaceRecordInput): Workspac
 
 /** 列表处理只依赖记录本身，不携带状态字段。 */
 export function toWorkspaceRecord(entry: WorkspaceEntry): WorkspaceRecord {
+  const groupId = readNonEmptyString(entry.groupId)
+  const groupTitle = readNonEmptyString(entry.groupTitle)
   return {
     id: entry.id,
+    ...(groupId ? { groupId } : {}),
+    ...(groupTitle ? { groupTitle } : {}),
+    ...(entry.sessionId !== undefined ? { sessionId: entry.sessionId } : {}),
     title: entry.title,
     domain: entry.domain,
     source: entry.source,
@@ -180,8 +232,14 @@ function coerceRecord(raw: RawRecord, now: number): WorkspaceRecord | null {
   if (!id || !title || !domain || !experimentId || !source) return null
 
   const updatedAt = readFiniteNumber(raw.updatedAt) ?? now
+  const groupId = readNonEmptyString(raw.groupId)
+  const groupTitle = readNonEmptyString(raw.groupTitle)
+  const sessionId = readNonEmptyString(raw.sessionId)
   return {
     id,
+    ...(groupId ? { groupId } : {}),
+    ...(groupTitle ? { groupTitle } : {}),
+    ...(sessionId ? { sessionId } : {}),
     title,
     domain,
     source,
@@ -297,4 +355,41 @@ export function sortWorkspaceEntries(entries: WorkspaceEntry[]): WorkspaceEntry[
     if (a.favorite !== b.favorite) return a.favorite ? -1 : 1
     return b.updatedAt - a.updatedAt
   })
+}
+
+/** 将绘画窗口记录按所属实验组聚合，用于 Codex/Claude 风格的工作区统一管理。 */
+export function groupWorkspaceEntries(entries: WorkspaceEntry[]): ExperimentGroupSummary[] {
+  const groups = new Map<string, ExperimentGroupSummary>()
+
+  for (const entry of entries) {
+    const groupId = resolveRecordGroupId(entry)
+    const groupTitle = resolveRecordGroupTitle(entry)
+    const existing = groups.get(groupId)
+    if (!existing) {
+      groups.set(groupId, {
+        groupId,
+        title: groupTitle,
+        domain: entry.domain,
+        windows: [entry],
+        updatedAt: entry.updatedAt,
+        favoriteCount: entry.favorite ? 1 : 0,
+      })
+    } else {
+      existing.windows.push(entry)
+      if (entry.updatedAt > existing.updatedAt) {
+        existing.updatedAt = entry.updatedAt
+        existing.domain = entry.domain
+      }
+      if (entry.groupTitle && entry.groupTitle.trim()) {
+        existing.title = entry.groupTitle.trim()
+      }
+      if (entry.favorite) existing.favoriteCount += 1
+    }
+  }
+
+  const result = Array.from(groups.values())
+  for (const group of result) {
+    group.windows = sortWorkspaceEntries(group.windows)
+  }
+  return result.sort((a, b) => b.updatedAt - a.updatedAt)
 }

@@ -72,8 +72,12 @@ interface WorkbenchState {
   leftPanelOpen: boolean
   /** 桌面工作台右侧参数检查器展开状态。 */
   rightPanelOpen: boolean
-  /** 当前实验对应的本地记录 ID；null 表示尚未保存，由自动保存创建。 */
+  /** 当前实验对应的本地记录 ID（即当前绘画窗口 ID）；null 表示尚未保存，由自动保存创建。 */
   workspaceRecordId: string | null
+  /** 当前绘画窗口所属实验组 ID。 */
+  activeGroupId: string | null
+  /** 当前绘画窗口所属实验组名称。 */
+  activeGroupTitle: string | null
   enterPresentation: () => void
   exitPresentation: () => void
   toggleLeftPanel: () => void
@@ -82,11 +86,23 @@ interface WorkbenchState {
   setParams: (params: ParamValues) => void
   resetParams: () => void
   setSpeed: (speed: number) => void
-  selectExperiment: (id: string, options?: { recordId?: string | null }) => void
+  selectExperiment: (
+    id: string,
+    options?: {
+      recordId?: string | null
+      groupId?: string | null
+      groupTitle?: string | null
+    },
+  ) => void
   applyGeneratedExperiment: (
     spec: GeneratedExperimentSpec,
     params?: ParamValues,
-    options?: { newRecord?: boolean; recordId?: string | null },
+    options?: {
+      newRecord?: boolean
+      recordId?: string | null
+      groupId?: string | null
+      groupTitle?: string | null
+    },
   ) => void
   /** 原子应用实验声明的边界态参数，并请求运行时重置后继续播放。 */
   applyCornerCase: (id: string) => void
@@ -96,6 +112,7 @@ interface WorkbenchState {
   syncProbe: (readout: ProbeReadout | null) => void
   resetToDefault: () => void
   setWorkspaceRecordId: (id: string | null) => void
+  setActiveGroup: (groupId: string | null, groupTitle: string | null) => void
   markAiVersionGood: () => void
   restoreLastGoodAi: () => boolean
   setHealRequesting: (attempt: number) => void
@@ -128,6 +145,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
   leftPanelOpen: true,
   rightPanelOpen: true,
   workspaceRecordId: null,
+  activeGroupId: null,
+  activeGroupTitle: null,
 
   enterPresentation: () => set({ presentation: true }),
 
@@ -156,6 +175,9 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
 
   setWorkspaceRecordId: (id) => set({ workspaceRecordId: id }),
 
+  setActiveGroup: (groupId, groupTitle) =>
+    set({ activeGroupId: groupId, activeGroupTitle: groupTitle }),
+
   /**
    * 切换案例时一次性替换实验、参数与运行态：
    * reloadKey 自增让 useExperimentRuntime 销毁旧运行时并按新案例默认参数重建。
@@ -165,6 +187,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
     const next = getExperimentById(id)
     if (!next) return
     const workspaceRecordId = options?.recordId ?? null
+    const activeGroupId = options?.groupId ?? null
+    const activeGroupTitle = options?.groupTitle ?? null
     if (next.id === experiment.id) {
       set({
         params: createDefaultParams(next),
@@ -178,6 +202,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
         lastGoodAi: null,
         heal: createInitialHeal(),
         workspaceRecordId,
+        activeGroupId,
+        activeGroupTitle,
         reloadKey: reloadKey + 1,
       })
       return
@@ -195,6 +221,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       lastGoodAi: null,
       heal: createInitialHeal(),
       workspaceRecordId,
+      activeGroupId,
+      activeGroupTitle,
       reloadKey: reloadKey + 1,
     })
   },
@@ -205,13 +233,25 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
    * lastGoodAi 保留不变，便于修复失败时恢复上一可用版本。
    */
   applyGeneratedExperiment: (spec, params, options) => {
-    const { reloadKey, workspaceRecordId } = get()
+    const { reloadKey, workspaceRecordId, activeGroupId, activeGroupTitle } = get()
     // 微调、修复与恢复默认沿用当前记录；只有新生成才另起一条记录。
     const nextRecordId = options?.newRecord
       ? null
       : options?.recordId !== undefined
         ? options.recordId
         : workspaceRecordId
+    const nextGroupId =
+      options?.groupId !== undefined
+        ? options.groupId
+        : options?.newRecord
+          ? null
+          : activeGroupId
+    const nextGroupTitle =
+      options?.groupTitle !== undefined
+        ? options.groupTitle
+        : options?.newRecord
+          ? null
+          : activeGroupTitle
     const experiment: ExperimentDefinition =
       spec.renderType === 'scene2d'
         ? compileScene2DExperiment(spec, 'ai-generated')
@@ -246,6 +286,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       probe: null,
       heal: createInitialHeal(),
       workspaceRecordId: nextRecordId,
+      activeGroupId: nextGroupId,
+      activeGroupTitle: nextGroupTitle,
       reloadKey: reloadKey + 1,
     })
   },
@@ -294,6 +336,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       lastGoodAi: null,
       heal: createInitialHeal(),
       workspaceRecordId: null,
+      activeGroupId: null,
+      activeGroupTitle: null,
       reloadKey: reloadKey + 1,
     })
   },

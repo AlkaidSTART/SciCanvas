@@ -92,6 +92,7 @@ mod imp {
     use std::ffi::{c_char, c_void, CStr, CString};
     use std::process::Command;
     use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+    use std::sync::OnceLock;
     use std::thread;
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -106,8 +107,13 @@ mod imp {
     const K_CG_HID_EVENT_TAP: u32 = 0;
     const K_VK_ANSI_C: u16 = 8;
 
-    // NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary
-    const NS_WINDOW_COLLECTION_BEHAVIOR_FLOATING: usize = (1 << 0) | (1 << 8);
+    // NSWindowStyleMaskNonactivatingPanel：点击悬浮球时不激活主应用、不触发空间切换
+    const NS_WINDOW_STYLE_MASK_NONACTIVATING_PANEL: usize = 1 << 7;
+    // NSStatusWindowLevel (25)：固定悬浮在普通窗口、Dock 与全屏应用之上，但低于系统截图遮罩
+    const NS_STATUS_WINDOW_LEVEL: isize = 25;
+    // NSWindowCollectionBehaviorCanJoinAllSpaces | Stationary | IgnoresCycle | FullScreenAuxiliary
+    const NS_WINDOW_COLLECTION_BEHAVIOR_FLOATING: usize =
+        (1 << 0) | (1 << 4) | (1 << 6) | (1 << 8);
 
     const AX_MESSAGING_TIMEOUT_SECS: f32 = 0.4;
     const TRACKER_POLL_INTERVAL_MS: u64 = 80;
@@ -199,10 +205,43 @@ mod imp {
     #[link(name = "objc")]
     extern "C" {
         fn objc_getClass(name: *const c_char) -> *mut c_void;
+        fn objc_allocateClassPair(
+            superclass: *mut c_void,
+            name: *const c_char,
+            extra_bytes: usize,
+        ) -> *mut c_void;
+        fn objc_registerClassPair(cls: *mut c_void);
+        fn class_addMethod(
+            cls: *mut c_void,
+            name: *mut c_void,
+            imp: *const c_void,
+            types: *const c_char,
+        ) -> bool;
+        fn class_getInstanceSize(cls: *mut c_void) -> usize;
+        fn object_getClass(obj: *mut c_void) -> *mut c_void;
+        fn object_setClass(obj: *mut c_void, cls: *mut c_void) -> *mut c_void;
         fn sel_registerName(name: *const c_char) -> *mut c_void;
         fn objc_msgSend();
         fn objc_autoreleasePoolPush() -> *mut c_void;
         fn objc_autoreleasePoolPop(pool: *mut c_void);
+    }
+
+    unsafe fn msg_send_0_void(obj: *mut c_void, sel: *mut c_void) {
+        let f: extern "C" fn(*mut c_void, *mut c_void) =
+            std::mem::transmute(objc_msgSend as *const c_void);
+        f(obj, sel)
+    }
+
+    unsafe fn msg_send_1_bool_void(obj: *mut c_void, sel: *mut c_void, arg: bool) {
+        let f: extern "C" fn(*mut c_void, *mut c_void, bool) =
+            std::mem::transmute(objc_msgSend as *const c_void);
+        f(obj, sel, arg)
+    }
+
+    unsafe fn msg_send_1_isize_void(obj: *mut c_void, sel: *mut c_void, arg: isize) {
+        let f: extern "C" fn(*mut c_void, *mut c_void, isize) =
+            std::mem::transmute(objc_msgSend as *const c_void);
+        f(obj, sel, arg)
     }
 
     unsafe fn msg_send_0_ptr(obj: *mut c_void, sel: *mut c_void) -> *mut c_void {
@@ -319,15 +358,114 @@ mod imp {
         f(obj, sel, bytes, len)
     }
 
-    /// 让悬浮球窗口在全屏论文阅读器 / 所有桌面空间上方保持可见。
+    extern "C" fn panel_can_become_key_window(_this: *mut c_void, _cmd: *mut c_void) -> i8 {
+        1
+    }
+
+    extern "C" fn panel_can_become_main_window(_this: *mut c_void, _cmd: *mut c_void) -> i8 {
+        0
+    }
+
+    unsafe fn floating_panel_class() -> *mut c_void {
+        static PANEL_CLASS: OnceLock<usize> = OnceLock::new();
+        let ptr = *PANEL_CLASS.get_or_init(|| {
+            let super_cls = objc_getClass(c"NSPanel".as_ptr());
+            if super_cls.is_null() {
+                return 0;
+            }
+            let existing = objc_getClass(c"SciCanvasFloatingPanel".as_ptr());
+            if !existing.is_null() {
+                return existing as usize;
+            }
+            let cls = objc_allocateClassPair(super_cls, c"SciCanvasFloatingPanel".as_ptr(), 0);
+            if cls.is_null() {
+                return super_cls as usize;
+            }
+            let _ = class_addMethod(
+                cls,
+                sel_registerName(c"canBecomeKeyWindow".as_ptr()),
+                panel_can_become_key_window as *const c_void,
+                c"c@:".as_ptr(),
+            );
+            let _ = class_addMethod(
+                cls,
+                sel_registerName(c"canBecomeMainWindow".as_ptr()),
+                panel_can_become_main_window as *const c_void,
+                c"c@:".as_ptr(),
+            );
+            objc_registerClassPair(cls);
+            cls as usize
+        });
+        ptr as *mut c_void
+    }
+
+    /// 将悬浮球升级为非激活态 NSPanel，固定在当前屏幕区域并可跨所有窗口、桌面空间与全屏应用停留。
     pub fn configure_floating_ball_window(ns_window: *mut c_void) {
         if ns_window.is_null() {
             return;
         }
         unsafe {
             let pool = objc_autoreleasePoolPush();
-            let sel = sel_registerName(c"setCollectionBehavior:".as_ptr());
-            msg_send_1_usize_void(ns_window, sel, NS_WINDOW_COLLECTION_BEHAVIOR_FLOATING);
+
+            let panel_cls = floating_panel_class();
+            if !panel_cls.is_null() {
+                let current_cls = object_getClass(ns_window);
+                if !current_cls.is_null()
+                    && current_cls != panel_cls
+                    && class_getInstanceSize(current_cls) >= class_getInstanceSize(panel_cls)
+                {
+                    object_setClass(ns_window, panel_cls);
+                }
+            }
+
+            let style_sel = sel_registerName(c"styleMask".as_ptr());
+            let set_style_sel = sel_registerName(c"setStyleMask:".as_ptr());
+            let current_style = msg_send_0_usize(ns_window, style_sel);
+            msg_send_1_usize_void(
+                ns_window,
+                set_style_sel,
+                current_style | NS_WINDOW_STYLE_MASK_NONACTIVATING_PANEL,
+            );
+
+            msg_send_1_bool_void(
+                ns_window,
+                sel_registerName(c"setFloatingPanel:".as_ptr()),
+                true,
+            );
+            msg_send_1_bool_void(
+                ns_window,
+                sel_registerName(c"setHidesOnDeactivate:".as_ptr()),
+                false,
+            );
+            msg_send_1_bool_void(
+                ns_window,
+                sel_registerName(c"setBecomesKeyOnlyIfNeeded:".as_ptr()),
+                true,
+            );
+            msg_send_1_isize_void(
+                ns_window,
+                sel_registerName(c"setLevel:".as_ptr()),
+                NS_STATUS_WINDOW_LEVEL,
+            );
+            msg_send_1_usize_void(
+                ns_window,
+                sel_registerName(c"setCollectionBehavior:".as_ptr()),
+                NS_WINDOW_COLLECTION_BEHAVIOR_FLOATING,
+            );
+
+            objc_autoreleasePoolPop(pool);
+        }
+    }
+
+    /// 在不激活主应用、不切换桌面空间的前提下，将悬浮球置顶显示在屏幕固定区域。
+    pub fn show_floating_ball_window(ns_window: *mut c_void) {
+        if ns_window.is_null() {
+            return;
+        }
+        configure_floating_ball_window(ns_window);
+        unsafe {
+            let pool = objc_autoreleasePoolPush();
+            msg_send_0_void(ns_window, sel_registerName(c"orderFrontRegardless".as_ptr()));
             objc_autoreleasePoolPop(pool);
         }
     }
@@ -1171,7 +1309,7 @@ mod imp {
 
     pub fn ensure_frontmost_tracker() {}
 
-    pub fn configure_floating_ball_window(_ns_window: *mut std::ffi::c_void) {}
+    pub fn show_floating_ball_window(_ns_window: *mut std::ffi::c_void) {}
 
     pub fn check_permissions() -> PermissionStatus {
         PermissionStatus {
@@ -1215,9 +1353,9 @@ mod imp {
 }
 
 pub use imp::{
-    capture_screen_region, capture_selected_text, check_permissions,
-    configure_floating_ball_window, ensure_frontmost_tracker, open_permission_settings,
-    request_accessibility_permission, request_screen_recording_permission,
+    capture_screen_region, capture_selected_text, check_permissions, ensure_frontmost_tracker,
+    open_permission_settings, request_accessibility_permission,
+    request_screen_recording_permission, show_floating_ball_window,
 };
 
 #[cfg(test)]
