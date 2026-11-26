@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { getExperimentById } from '../experiments'
 import { sanitizeExportFileName } from '../export/html'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { useWorkspaceStore } from '../store/useWorkspaceStore'
 import { maskApiKey } from '../workspace/modelConfig'
 import type { ModelConfigDraft, WorkspaceEntry } from '../workspace/types'
+import {
+  BACKDROP_VARIANTS,
+  DIALOG_VARIANTS,
+  FAST_TRANSITION,
+  SPRING_SNAPPY,
+  TAP_BUTTON,
+} from './motion'
 
 interface WorkspaceDialogProps {
   onClose: () => void
@@ -113,8 +121,6 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
     return () => window.clearTimeout(timer)
   }, [feedback, clearFeedback])
 
-  if (!open) return null
-
   const visibleEntries =
     filter === 'favorites' ? entries.filter((entry) => entry.favorite) : entries
   const favoriteCount = entries.filter((entry) => entry.favorite).length
@@ -185,13 +191,21 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
   }
 
   return (
-    <div
+    <motion.div
+      variants={BACKDROP_VARIANTS}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
       className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(58,51,43,0.34)] p-4 backdrop-blur-[2px]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div
+      <motion.div
+        variants={DIALOG_VARIANTS}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
         className="flex max-h-[min(760px,92vh)] w-[min(820px,100%)] flex-col overflow-hidden rounded-[16px] border border-line bg-panel shadow-[0_30px_80px_rgba(58,51,43,0.28)]"
         role="dialog"
         aria-modal="true"
@@ -208,38 +222,38 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
           </div>
 
           <div className="flex items-center gap-1 rounded-[9px] border border-line bg-surface-soft/70 p-0.5">
-            <button
-              className={`rounded-[7px] px-2.5 py-1 text-[11px] transition-colors ${
-                tab === 'records'
-                  ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
-                  : 'text-ink-faint hover:text-ink-dim'
-              }`}
-              type="button"
-              onClick={() => setTab('records')}
-            >
-              实验记录
-            </button>
-            <button
-              className={`rounded-[7px] px-2.5 py-1 text-[11px] transition-colors ${
-                tab === 'settings'
-                  ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
-                  : 'text-ink-faint hover:text-ink-dim'
-              }`}
-              type="button"
-              onClick={() => setTab('settings')}
-            >
-              模型配置
-            </button>
+            {(['records', 'settings'] as const).map((item) => (
+              <button
+                key={item}
+                className={`relative rounded-[7px] px-2.5 py-1 text-[11px] transition-colors ${
+                  tab === item ? 'text-ink' : 'text-ink-faint hover:text-ink-dim'
+                }`}
+                type="button"
+                onClick={() => setTab(item)}
+              >
+                {tab === item && (
+                  <motion.span
+                    layoutId="workspace-tab-pill"
+                    transition={SPRING_SNAPPY}
+                    className="absolute inset-0 rounded-[7px] bg-surface shadow-[0_1px_2px_rgba(58,51,43,0.08)]"
+                  />
+                )}
+                <span className="relative z-[1]">
+                  {item === 'records' ? '实验记录' : '模型配置'}
+                </span>
+              </button>
+            ))}
           </div>
 
-          <button
+          <motion.button
+            whileTap={TAP_BUTTON}
             className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11px] text-ink-dim transition-colors hover:border-line-strong hover:bg-surface-soft hover:text-ink"
             type="button"
             onClick={onClose}
             aria-label="关闭本地工作区"
           >
             关闭
-          </button>
+          </motion.button>
         </header>
 
         {storageError && (
@@ -251,330 +265,362 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
           </div>
         )}
 
-        {tab === 'records' ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden px-4 py-3">
-            <div className="flex flex-none items-center justify-between gap-2">
-              <span className="text-[10px] text-ink-faint">
-                {hydrating
-                  ? '正在读取本地记录…'
-                  : `${entries.length} 条记录 · ${favoriteCount} 条收藏`}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  className={`rounded-md px-2 py-[3px] text-[10px] transition-colors ${
-                    filter === 'all'
-                      ? 'bg-accent-soft text-accent-strong'
-                      : 'text-ink-faint hover:text-ink-dim'
-                  }`}
-                  type="button"
-                  onClick={() => setFilter('all')}
-                  aria-pressed={filter === 'all'}
-                >
-                  全部
-                </button>
-                <button
-                  className={`rounded-md px-2 py-[3px] text-[10px] transition-colors ${
-                    filter === 'favorites'
-                      ? 'bg-accent-soft text-accent-strong'
-                      : 'text-ink-faint hover:text-ink-dim'
-                  }`}
-                  type="button"
-                  onClick={() => setFilter('favorites')}
-                  aria-pressed={filter === 'favorites'}
-                >
-                  收藏
-                </button>
-              </div>
-            </div>
-
-            {loadError && (
-              <p
-                className="m-0 flex-none rounded-[8px] border border-rose/30 bg-rose/[0.08] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
-                role="alert"
-              >
-                {loadError}
-              </p>
-            )}
-
-            <div className="preset-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
-              {visibleEntries.length === 0 ? (
-                <div className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-[11px] border border-dashed border-line-strong/60 bg-surface/40 px-4 py-10 text-center">
-                  <span className="text-[12px] text-ink-dim">
-                    {filter === 'favorites' ? '还没有收藏记录' : '还没有本地记录'}
-                  </span>
-                  <span className="max-w-[36ch] text-[10px] leading-[1.6] text-ink-faint">
-                    切换预设或生成 AI 实验后会自动保存；拖动参数停止后也会写入最近状态。
-                  </span>
-                </div>
-              ) : (
-                visibleEntries.map((entry) => {
-                  const current = entry.id === currentRecordId
-                  const unsupported = entry.status === 'unsupported'
-                  const renaming = renamingId === entry.id
-                  return (
-                    <article
-                      key={entry.id}
-                      className={`flex flex-col gap-2 rounded-[11px] border px-3 py-2.5 ${
-                        current
-                          ? 'border-accent-line bg-accent-soft/45'
-                          : 'border-line bg-surface/70'
+        <AnimatePresence mode="wait" initial={false}>
+          {tab === 'records' ? (
+            <motion.div
+              key="workspace-records"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={FAST_TRANSITION}
+              className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden px-4 py-3"
+            >
+              <div className="flex flex-none items-center justify-between gap-2">
+                <span className="text-[10px] text-ink-faint">
+                  {hydrating
+                    ? '正在读取本地记录…'
+                    : `${entries.length} 条记录 · ${favoriteCount} 条收藏`}
+                </span>
+                <div className="flex gap-1">
+                  {(['all', 'favorites'] as const).map((item) => (
+                    <button
+                      key={item}
+                      className={`relative rounded-md px-2 py-[3px] text-[10px] transition-colors ${
+                        filter === item ? 'text-accent-strong' : 'text-ink-faint hover:text-ink-dim'
                       }`}
+                      type="button"
+                      onClick={() => setFilter(item)}
+                      aria-pressed={filter === item}
                     >
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={`rounded-[5px] border px-1.5 py-px font-mono text-[9px] ${
-                            entry.source === 'ai'
-                              ? 'border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.09)] text-[#6d5a7d]'
-                              : 'border-line bg-surface-soft text-ink-faint'
+                      {filter === item && (
+                        <motion.span
+                          layoutId="workspace-filter-pill"
+                          transition={SPRING_SNAPPY}
+                          className="absolute inset-0 rounded-md bg-accent-soft"
+                        />
+                      )}
+                      <span className="relative z-[1]">{item === 'all' ? '全部' : '收藏'}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {loadError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={FAST_TRANSITION}
+                    className="m-0 flex-none rounded-[8px] border border-rose/30 bg-rose/[0.08] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
+                    role="alert"
+                  >
+                    {loadError}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+
+              <div className="preset-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                {visibleEntries.length === 0 ? (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={FAST_TRANSITION}
+                    className="flex flex-1 flex-col items-center justify-center gap-1.5 rounded-[11px] border border-dashed border-line-strong/60 bg-surface/40 px-4 py-10 text-center"
+                  >
+                    <span className="text-[12px] text-ink-dim">
+                      {filter === 'favorites' ? '还没有收藏记录' : '还没有本地记录'}
+                    </span>
+                    <span className="max-w-[36ch] text-[10px] leading-[1.6] text-ink-faint">
+                      切换预设或生成 AI 实验后会自动保存；拖动参数停止后也会写入最近状态。
+                    </span>
+                  </motion.div>
+                ) : (
+                  <AnimatePresence initial={false}>
+                    {visibleEntries.map((entry) => {
+                      const current = entry.id === currentRecordId
+                      const unsupported = entry.status === 'unsupported'
+                      const renaming = renamingId === entry.id
+                      return (
+                        <motion.article
+                          key={entry.id}
+                          layout="position"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.97 }}
+                          transition={FAST_TRANSITION}
+                          className={`flex flex-col gap-2 rounded-[11px] border px-3 py-2.5 ${
+                            current
+                              ? 'border-accent-line bg-accent-soft/45'
+                              : 'border-line bg-surface/70'
                           }`}
                         >
-                          {entry.source === 'ai' ? 'AI 生成' : '预设'}
-                        </span>
-                        {entry.favorite && (
-                          <span className="rounded-[5px] border border-[rgba(217,162,74,0.4)] bg-butter/20 px-1.5 py-px font-mono text-[9px] text-[#8a6a2f]">
-                            收藏
-                          </span>
-                        )}
-                        {current && (
-                          <span className="rounded-[5px] border border-accent-line bg-accent-soft px-1.5 py-px font-mono text-[9px] text-accent-strong">
-                            当前
-                          </span>
-                        )}
-                        {entry.status === 'migrated' && (
-                          <span className="rounded-[5px] border border-mint/40 bg-mint/[0.12] px-1.5 py-px font-mono text-[9px] text-[#4f7a63]">
-                            已升级
-                          </span>
-                        )}
-                        {unsupported && (
-                          <span className="rounded-[5px] border border-rose/40 bg-rose/[0.1] px-1.5 py-px font-mono text-[9px] text-[#a9605f]">
-                            不可用
-                          </span>
-                        )}
-                      </div>
-
-                      {renaming ? (
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            className={INPUT_CLASS}
-                            value={renameValue}
-                            maxLength={80}
-                            autoFocus
-                            aria-label="记录名称"
-                            onChange={(event) => setRenameValue(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                void commitRename(entry)
-                              } else if (event.key === 'Escape') {
-                                setRenamingId(null)
-                              }
-                            }}
-                          />
-                          <button
-                            className={SMALL_BUTTON}
-                            type="button"
-                            onClick={() => void commitRename(entry)}
-                          >
-                            保存
-                          </button>
-                          <button
-                            className={SMALL_BUTTON}
-                            type="button"
-                            onClick={() => setRenamingId(null)}
-                          >
-                            取消
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="w-fit max-w-full truncate text-left text-[12.5px] font-[550] leading-[1.4] text-ink enabled:hover:text-accent-strong disabled:cursor-default"
-                          type="button"
-                          disabled={unsupported}
-                          onClick={() => handleOpenEntry(entry)}
-                          title={unsupported ? entry.issue : '打开该记录'}
-                        >
-                          {entry.title}
-                        </button>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[9.5px] text-ink-faint">
-                        <span>{entry.domain}</span>
-                        <span>·</span>
-                        <span>{formatTimestamp(entry.updatedAt)}</span>
-                        {entry.source === 'ai' && (
-                          <>
-                            <span>·</span>
-                            <span className="font-mono">代码 v{entry.codeVersion || 1}</span>
-                          </>
-                        )}
-                        <span>·</span>
-                        <span className="font-mono">结构 v{entry.schemaVersion}</span>
-                      </div>
-
-                      {entry.issue && (
-                        <p className="m-0 rounded-[7px] border border-rose/25 bg-rose/[0.06] px-2 py-1.5 text-[10px] leading-[1.55] text-[#a9605f]">
-                          {entry.issue}
-                        </p>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {unsupported ? (
-                          <>
-                            <button
-                              className={SMALL_BUTTON}
-                              type="button"
-                              onClick={() => downloadBackup(entry)}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={`rounded-[5px] border px-1.5 py-px font-mono text-[9px] ${
+                                entry.source === 'ai'
+                                  ? 'border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.09)] text-[#6d5a7d]'
+                                  : 'border-line bg-surface-soft text-ink-faint'
+                              }`}
                             >
-                              导出备份
-                            </button>
+                              {entry.source === 'ai' ? 'AI 生成' : '预设'}
+                            </span>
+                            {entry.favorite && (
+                              <span className="rounded-[5px] border border-[rgba(217,162,74,0.4)] bg-butter/20 px-1.5 py-px font-mono text-[9px] text-[#8a6a2f]">
+                                收藏
+                              </span>
+                            )}
+                            {current && (
+                              <span className="rounded-[5px] border border-accent-line bg-accent-soft px-1.5 py-px font-mono text-[9px] text-accent-strong">
+                                当前
+                              </span>
+                            )}
+                            {entry.status === 'migrated' && (
+                              <span className="rounded-[5px] border border-mint/40 bg-mint/[0.12] px-1.5 py-px font-mono text-[9px] text-[#4f7a63]">
+                                已升级
+                              </span>
+                            )}
+                            {unsupported && (
+                              <span className="rounded-[5px] border border-rose/40 bg-rose/[0.1] px-1.5 py-px font-mono text-[9px] text-[#a9605f]">
+                                不可用
+                              </span>
+                            )}
+                          </div>
+
+                          {renaming ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                className={INPUT_CLASS}
+                                value={renameValue}
+                                maxLength={80}
+                                autoFocus
+                                aria-label="记录名称"
+                                onChange={(event) => setRenameValue(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault()
+                                    void commitRename(entry)
+                                  } else if (event.key === 'Escape') {
+                                    setRenamingId(null)
+                                  }
+                                }}
+                              />
+                              <button
+                                className={SMALL_BUTTON}
+                                type="button"
+                                onClick={() => void commitRename(entry)}
+                              >
+                                保存
+                              </button>
+                              <button
+                                className={SMALL_BUTTON}
+                                type="button"
+                                onClick={() => setRenamingId(null)}
+                              >
+                                取消
+                              </button>
+                            </div>
+                          ) : (
                             <button
-                              className={DANGER_BUTTON}
+                              className="w-fit max-w-full truncate text-left text-[12.5px] font-[550] leading-[1.4] text-ink enabled:hover:text-accent-strong disabled:cursor-default"
                               type="button"
-                              onClick={() => void handleDelete(entry)}
-                            >
-                              {confirmDeleteId === entry.id ? '确认删除' : '删除'}
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              className={SMALL_BUTTON}
-                              type="button"
-                              onClick={() => void toggleFavorite(entry.id)}
-                            >
-                              {entry.favorite ? '取消收藏' : '收藏'}
-                            </button>
-                            <button
-                              className={SMALL_BUTTON}
-                              type="button"
+                              disabled={unsupported}
                               onClick={() => handleOpenEntry(entry)}
+                              title={unsupported ? entry.issue : '打开该记录'}
                             >
-                              打开
+                              {entry.title}
                             </button>
-                            <button
-                              className={SMALL_BUTTON}
-                              type="button"
-                              onClick={() => beginRename(entry)}
-                            >
-                              重命名
-                            </button>
-                            <button
-                              className={DANGER_BUTTON}
-                              type="button"
-                              onClick={() => void handleDelete(entry)}
-                            >
-                              {confirmDeleteId === entry.id ? '确认删除' : '删除'}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </article>
-                  )
-                })
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="preset-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            <div className="rounded-[10px] border border-[rgba(217,162,74,0.35)] bg-butter/15 px-3 py-2.5 text-[10.5px] leading-[1.6] text-[#8a6a2f]">
-              配置只写入当前浏览器的 IndexedDB，不写入 localStorage、Cookie，也不会保存到服务端。清除浏览器站点数据会一并删除。
-            </div>
+                          )}
 
-            <form className="mt-3 flex flex-col gap-3" onSubmit={handleSaveConfig}>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
-                  模型 API Key
-                </span>
-                <div className="flex gap-1.5">
-                  <input
-                    className={INPUT_CLASS}
-                    type={showKey ? 'text' : 'password'}
-                    value={draft.apiKey}
-                    maxLength={512}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="sk-..."
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, apiKey: event.target.value }))
-                    }
-                  />
-                  <button
-                    className={SMALL_BUTTON}
-                    type="button"
-                    onClick={() => setShowKey((current) => !current)}
-                  >
-                    {showKey ? '隐藏' : '显示'}
-                  </button>
-                </div>
-              </label>
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[9.5px] text-ink-faint">
+                            <span>{entry.domain}</span>
+                            <span>·</span>
+                            <span>{formatTimestamp(entry.updatedAt)}</span>
+                            {entry.source === 'ai' && (
+                              <>
+                                <span>·</span>
+                                <span className="font-mono">代码 v{entry.codeVersion || 1}</span>
+                              </>
+                            )}
+                            <span>·</span>
+                            <span className="font-mono">结构 v{entry.schemaVersion}</span>
+                          </div>
 
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
-                  第三方 API 端点
-                </span>
-                <input
-                  className={INPUT_CLASS}
-                  type="url"
-                  value={draft.baseUrl}
-                  maxLength={500}
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="https://api.example.com/v1"
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, baseUrl: event.target.value }))
-                  }
-                />
-              </label>
+                          {entry.issue && (
+                            <p className="m-0 rounded-[7px] border border-rose/25 bg-rose/[0.06] px-2 py-1.5 text-[10px] leading-[1.55] text-[#a9605f]">
+                              {entry.issue}
+                            </p>
+                          )}
 
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
-                  默认模型
-                </span>
-                <input
-                  className={INPUT_CLASS}
-                  type="text"
-                  value={draft.model}
-                  maxLength={120}
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="留空则使用部署方默认模型"
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, model: event.target.value }))
-                  }
-                />
-              </label>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  className="rounded-lg border border-transparent bg-accent-strong px-3.5 py-[7px] text-xs font-semibold text-[#fbf7ef] transition-colors hover:bg-accent"
-                  type="submit"
-                >
-                  保存配置
-                </button>
-                <button
-                  className={confirmClear ? DANGER_BUTTON : SMALL_BUTTON}
-                  type="button"
-                  disabled={!modelConfig && !draft.apiKey && !draft.baseUrl && !draft.model}
-                  onClick={() => void handleClearConfig()}
-                >
-                  {confirmClear ? '确认清除' : '清除配置'}
-                </button>
-                {confirmClear && (
-                  <button className={SMALL_BUTTON} type="button" onClick={() => setConfirmClear(false)}>
-                    取消
-                  </button>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {unsupported ? (
+                              <>
+                                <button
+                                  className={SMALL_BUTTON}
+                                  type="button"
+                                  onClick={() => downloadBackup(entry)}
+                                >
+                                  导出备份
+                                </button>
+                                <button
+                                  className={DANGER_BUTTON}
+                                  type="button"
+                                  onClick={() => void handleDelete(entry)}
+                                >
+                                  {confirmDeleteId === entry.id ? '确认删除' : '删除'}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className={SMALL_BUTTON}
+                                  type="button"
+                                  onClick={() => void toggleFavorite(entry.id)}
+                                >
+                                  {entry.favorite ? '取消收藏' : '收藏'}
+                                </button>
+                                <button
+                                  className={SMALL_BUTTON}
+                                  type="button"
+                                  onClick={() => handleOpenEntry(entry)}
+                                >
+                                  打开
+                                </button>
+                                <button
+                                  className={SMALL_BUTTON}
+                                  type="button"
+                                  onClick={() => beginRename(entry)}
+                                >
+                                  重命名
+                                </button>
+                                <button
+                                  className={DANGER_BUTTON}
+                                  type="button"
+                                  onClick={() => void handleDelete(entry)}
+                                >
+                                  {confirmDeleteId === entry.id ? '确认删除' : '删除'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </motion.article>
+                      )
+                    })}
+                  </AnimatePresence>
                 )}
               </div>
-            </form>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="workspace-settings"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={FAST_TRANSITION}
+              className="preset-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3"
+            >
+              <div className="rounded-[10px] border border-[rgba(217,162,74,0.35)] bg-butter/15 px-3 py-2.5 text-[10.5px] leading-[1.6] text-[#8a6a2f]">
+                配置只写入当前浏览器的 IndexedDB，不写入 localStorage、Cookie，也不会保存到服务端。清除浏览器站点数据会一并删除。
+              </div>
 
-            {modelConfig && (
-              <p className="m-0 mt-3 rounded-[8px] border border-line bg-surface/60 px-2.5 py-2 text-[10px] leading-[1.6] text-ink-faint">
-                当前已保存：密钥 {maskApiKey(modelConfig.apiKey) || '为空'} · 端点{' '}
-                {modelConfig.baseUrl || '默认'} · 模型 {modelConfig.model || '默认'}
-              </p>
-            )}
-          </div>
-        )}
+              <form className="mt-3 flex flex-col gap-3" onSubmit={handleSaveConfig}>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
+                    模型 API Key
+                  </span>
+                  <div className="flex gap-1.5">
+                    <input
+                      className={INPUT_CLASS}
+                      type={showKey ? 'text' : 'password'}
+                      value={draft.apiKey}
+                      maxLength={512}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="sk-..."
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, apiKey: event.target.value }))
+                      }
+                    />
+                    <button
+                      className={SMALL_BUTTON}
+                      type="button"
+                      onClick={() => setShowKey((current) => !current)}
+                    >
+                      {showKey ? '隐藏' : '显示'}
+                    </button>
+                  </div>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
+                    第三方 API 端点
+                  </span>
+                  <input
+                    className={INPUT_CLASS}
+                    type="url"
+                    value={draft.baseUrl}
+                    maxLength={500}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="https://api.example.com/v1"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, baseUrl: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-faint">
+                    默认模型
+                  </span>
+                  <input
+                    className={INPUT_CLASS}
+                    type="text"
+                    value={draft.model}
+                    maxLength={120}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="留空则使用部署方默认模型"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, model: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <motion.button
+                    whileTap={TAP_BUTTON}
+                    className="rounded-lg border border-transparent bg-accent-strong px-3.5 py-[7px] text-xs font-semibold text-[#fbf7ef] transition-colors hover:bg-accent"
+                    type="submit"
+                  >
+                    保存配置
+                  </motion.button>
+                  <motion.button
+                    whileTap={TAP_BUTTON}
+                    className={confirmClear ? DANGER_BUTTON : SMALL_BUTTON}
+                    type="button"
+                    disabled={!modelConfig && !draft.apiKey && !draft.baseUrl && !draft.model}
+                    onClick={() => void handleClearConfig()}
+                  >
+                    {confirmClear ? '确认清除' : '清除配置'}
+                  </motion.button>
+                  {confirmClear && (
+                    <button className={SMALL_BUTTON} type="button" onClick={() => setConfirmClear(false)}>
+                      取消
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              {modelConfig && (
+                <p className="m-0 mt-3 rounded-[8px] border border-line bg-surface/60 px-2.5 py-2 text-[10px] leading-[1.6] text-ink-faint">
+                  当前已保存：密钥 {maskApiKey(modelConfig.apiKey) || '为空'} · 端点{' '}
+                  {modelConfig.baseUrl || '默认'} · 模型 {modelConfig.model || '默认'}
+                </p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <footer className="flex flex-none flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-soft/50 px-4 py-2.5 text-[10px] text-ink-faint">
           <span>
@@ -588,20 +634,35 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
                     ? '自动保存已启用'
                     : '本地工作区加载中…'}
           </span>
-          {feedback ? (
-            <span
-              className={
-                feedback.tone === 'error' ? 'text-[#a9605f]' : 'text-[#4f7a63]'
-              }
-              role="status"
-            >
-              {feedback.message}
-            </span>
-          ) : (
-            <span>刷新页面后记录仍会保留</span>
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            {feedback ? (
+              <motion.span
+                key={`feedback-${feedback.message}`}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={FAST_TRANSITION}
+                className={
+                  feedback.tone === 'error' ? 'text-[#a9605f]' : 'text-[#4f7a63]'
+                }
+                role="status"
+              >
+                {feedback.message}
+              </motion.span>
+            ) : (
+              <motion.span
+                key="feedback-default"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={FAST_TRANSITION}
+              >
+                刷新页面后记录仍会保留
+              </motion.span>
+            )}
+          </AnimatePresence>
         </footer>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

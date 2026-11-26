@@ -1,11 +1,6 @@
-import { describeControlValue } from '../runtime/params'
+import { describeControlValue, isCornerCaseActive } from '../runtime/params'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
-import type {
-  ControlDefinition,
-  ControlValue,
-  CornerCase,
-  ParamValues,
-} from '../types/experiment'
+import type { ControlDefinition, ControlValue } from '../types/experiment'
 import { PauseIcon, PlayIcon, ResetIcon, StepIcon } from './icons'
 
 interface ControlBarProps {
@@ -16,16 +11,12 @@ interface ControlBarProps {
 
 const SPEED_OPTIONS = [0.5, 1, 2]
 
-/** 控件显示值与边界态声明完全一致时视为选中。 */
-function isCornerCaseActive(cornerCase: CornerCase, params: ParamValues): boolean {
-  return Object.entries(cornerCase.params).every(([key, value]) => params[key] === value)
-}
-
 export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
   const experiment = useWorkbenchStore((state) => state.experiment)
   const params = useWorkbenchStore((state) => state.params)
   const status = useWorkbenchStore((state) => state.status)
   const speed = useWorkbenchStore((state) => state.speed)
+  const presentation = useWorkbenchStore((state) => state.presentation)
   const setSpeed = useWorkbenchStore((state) => state.setSpeed)
   const setParam = useWorkbenchStore((state) => state.setParam)
   const applyCornerCase = useWorkbenchStore((state) => state.applyCornerCase)
@@ -33,36 +24,48 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
   const running = status === 'running'
   const disabled = status === 'error'
   const cornerCases = experiment.cornerCases ?? []
+  // 桌面工作台模式下参数与边界态停靠在右侧检查器，底部保持紧凑播放控制条；
+  // 演示模式或窄屏（< 960px）保留完整底部参数区。
+  const hideInlineControlsOnDesktop = !presentation
 
   return (
-    <footer className="flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#fcf9f2,#f8f2e8)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px]">
-      <div className="flex flex-wrap items-center gap-3.5 max-[640px]:gap-2.5">
-        <div className="flex items-center gap-2">
+    <footer
+      className={`flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#fcf9f2,#f8f2e8)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px] ${
+        hideInlineControlsOnDesktop
+          ? 'max-[959px]:max-h-[42vh] max-[959px]:overflow-y-auto min-[960px]:gap-0 min-[960px]:px-3.5 min-[960px]:py-2'
+          : 'max-h-[38vh] overflow-y-auto'
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-3 max-[640px]:gap-2">
+        <div className="flex items-center gap-1.5">
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-[11px] py-[7px] text-xs text-accent-strong transition-colors enabled:hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-[11px] py-[6px] text-xs font-medium text-accent-strong transition-colors enabled:hover:bg-accent/20 disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onTogglePlay}
             disabled={disabled}
             aria-label={running ? '暂停仿真' : '播放仿真'}
+            title="播放 / 暂停 (Space)"
           >
             {running ? <PauseIcon className="size-[13px] flex-none" /> : <PlayIcon className="size-[13px] flex-none" />}
             <span>{running ? '暂停' : '播放'}</span>
           </button>
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[10px] py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onStep}
             disabled={disabled}
             aria-label="单步推进一帧"
+            title="单步推进 (.)"
           >
             <StepIcon className="size-[13px] flex-none" />
             <span>单步</span>
           </button>
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[11px] py-[7px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-[10px] py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45 max-[640px]:px-[9px] max-[640px]:py-1.5 max-[640px]:text-[11px]"
             type="button"
             onClick={onReset}
             aria-label="重置仿真"
+            title="重置仿真 (R)"
           >
             <ResetIcon className="size-[13px] flex-none" />
             <span>重置</span>
@@ -77,7 +80,7 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
           {SPEED_OPTIONS.map((option) => (
             <button
               key={option}
-              className={`rounded-md px-[9px] py-1 font-mono text-[11px] transition-colors ${
+              className={`rounded-md px-[8px] py-0.5 font-mono text-[11px] transition-colors ${
                 speed === option ? 'bg-accent-soft text-accent-strong' : 'text-ink-faint hover:text-ink-dim'
               }`}
               type="button"
@@ -89,13 +92,29 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
           ))}
         </div>
 
-        <span className="ml-auto font-mono text-[10px] text-ink-faint max-[640px]:hidden">
-          固定步长 1/120 s · 后台切换自动限幅
-        </span>
+        <div className="ml-auto hidden items-center gap-3 font-mono text-[10px] text-ink-faint min-[720px]:flex">
+          <span className="hidden items-center gap-1.5 min-[1180px]:inline-flex">
+            <kbd className="rounded-[4px] border border-line bg-surface px-1 py-px text-[9px] text-ink-dim">
+              Space
+            </kbd>
+            <span>播停</span>
+            <kbd className="ml-1 rounded-[4px] border border-line bg-surface px-1 py-px text-[9px] text-ink-dim">
+              R
+            </kbd>
+            <span>重置</span>
+          </span>
+          <span className="whitespace-nowrap">固定步长 1/120 s</span>
+        </div>
       </div>
 
       {cornerCases.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="边界快捷态">
+        <div
+          className={`flex flex-wrap items-center gap-1.5 ${
+            hideInlineControlsOnDesktop ? 'min-[960px]:hidden' : ''
+          }`}
+          role="group"
+          aria-label="边界快捷态"
+        >
           <span className="mr-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-ink-faint">
             边界快捷态
           </span>
@@ -122,7 +141,11 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-x-5 gap-y-2.5 max-[640px]:grid-cols-2 max-[640px]:gap-x-3.5">
+      <div
+        className={`grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-x-5 gap-y-2.5 max-[640px]:grid-cols-2 max-[640px]:gap-x-3.5 ${
+          hideInlineControlsOnDesktop ? 'min-[960px]:hidden' : ''
+        }`}
+      >
         {experiment.controls.map((control) => (
           <ControlField
             key={control.key}
@@ -142,10 +165,17 @@ interface ControlFieldProps {
   value: ControlValue
   disabled: boolean
   onChange: (key: string, value: ControlValue) => void
+  idPrefix?: string
 }
 
-function ControlField({ control, value, disabled, onChange }: ControlFieldProps) {
-  const inputId = `control-${control.key}`
+export function ControlField({
+  control,
+  value,
+  disabled,
+  onChange,
+  idPrefix = 'control',
+}: ControlFieldProps) {
+  const inputId = `${idPrefix}-${control.key}`
 
   if (control.type === 'slider') {
     const numericValue = typeof value === 'number' ? value : control.default

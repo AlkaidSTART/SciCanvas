@@ -67,12 +67,19 @@ interface WorkbenchState {
   heal: HealState
   /** 演示模式仅改变布局，不触碰当前实验与运行状态。 */
   presentation: boolean
+  /** 桌面工作台左侧栏展开状态。 */
+  leftPanelOpen: boolean
+  /** 桌面工作台右侧参数检查器展开状态。 */
+  rightPanelOpen: boolean
   /** 当前实验对应的本地记录 ID；null 表示尚未保存，由自动保存创建。 */
   workspaceRecordId: string | null
   enterPresentation: () => void
   exitPresentation: () => void
+  toggleLeftPanel: () => void
+  toggleRightPanel: () => void
   setParam: (key: string, value: ControlValue) => void
   setParams: (params: ParamValues) => void
+  resetParams: () => void
   setSpeed: (speed: number) => void
   selectExperiment: (id: string, options?: { recordId?: string | null }) => void
   applyGeneratedExperiment: (
@@ -117,11 +124,17 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
   lastGoodAi: null,
   heal: createInitialHeal(),
   presentation: false,
+  leftPanelOpen: true,
+  rightPanelOpen: true,
   workspaceRecordId: null,
 
   enterPresentation: () => set({ presentation: true }),
 
   exitPresentation: () => set({ presentation: false }),
+
+  toggleLeftPanel: () => set((state) => ({ leftPanelOpen: !state.leftPanelOpen })),
+
+  toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
 
   setParam: (key, value) => {
     const { experiment, params } = get()
@@ -131,6 +144,11 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
   setParams: (params) => {
     const { experiment } = get()
     set({ params: sanitizeParams(experiment, params) })
+  },
+
+  resetParams: () => {
+    const { experiment } = get()
+    set({ params: createDefaultParams(experiment) })
   },
 
   setSpeed: (speed) => set({ speed }),

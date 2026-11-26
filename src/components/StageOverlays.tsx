@@ -43,21 +43,65 @@ function Sparkline({ samples, metric }: { samples: TelemetrySample[]; metric: Te
   )
 }
 
+export function TelemetryMetrics({
+  metrics,
+  samples,
+}: {
+  metrics: TelemetryMetric[]
+  samples: TelemetrySample[]
+}) {
+  const latest = samples.length > 0 ? samples[samples.length - 1] : null
+  if (!latest) {
+    return <p className="m-0 py-1.5 text-[10.5px] text-ink-faint">等待采样…</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {metrics.map((metric) => {
+        const value = latest.values[metric.key]
+        return (
+          <div key={metric.key} className="flex flex-col gap-0.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5 text-[10.5px] text-ink-dim">
+                <span
+                  className="size-1.5 flex-none rounded-full"
+                  style={{ backgroundColor: metric.color }}
+                />
+                <span className="truncate">{metric.label}</span>
+              </span>
+              <span className="whitespace-nowrap font-mono text-[10.5px] tabular-nums text-ink">
+                {typeof value === 'number' ? formatMetric(metric, value) : '—'}
+              </span>
+            </div>
+            <Sparkline samples={samples} metric={metric} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /**
  * 遥测浮层只在实验声明 telemetry 且来自本地预设时出现；
- * 未声明能力不会渲染任何空图表。
+ * 桌面工作台右侧检查器展开时由检查器承接，避免遮挡画布。
  */
 export function TelemetryOverlay() {
   const experiment = useWorkbenchStore((state) => state.experiment)
   const source = useWorkbenchStore((state) => state.source)
   const samples = useWorkbenchStore((state) => state.telemetry)
+  const presentation = useWorkbenchStore((state) => state.presentation)
+  const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
   const telemetry = experiment.telemetry
   if (source === 'ai' || !telemetry || telemetry.metrics.length === 0) return null
 
-  const latest = samples.length > 0 ? samples[samples.length - 1] : null
+  const dockedOnDesktop = !presentation && rightPanelOpen
 
   return (
-    <div className="pointer-events-none absolute bottom-[18px] right-[18px] z-[5] w-[196px] rounded-xl border border-line bg-panel/88 px-3 pb-2.5 pt-2 shadow-[0_12px_28px_rgba(58,51,43,0.1)] backdrop-blur-md max-[640px]:hidden">
+    <div
+      className={`pointer-events-none absolute bottom-[18px] right-[18px] z-[5] w-[196px] rounded-xl border border-line bg-panel/88 px-3 pb-2.5 pt-2 shadow-[0_12px_28px_rgba(58,51,43,0.1)] backdrop-blur-md max-[640px]:hidden ${
+        dockedOnDesktop ? 'min-[960px]:hidden' : ''
+      }`}
+    >
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="font-mono text-[9px] uppercase tracking-[0.13em] text-ink-faint">
           实时遥测
@@ -67,32 +111,7 @@ export function TelemetryOverlay() {
         </span>
       </div>
 
-      {!latest ? (
-        <p className="m-0 py-1.5 text-[10.5px] text-ink-faint">等待采样…</p>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {telemetry.metrics.map((metric) => {
-            const value = latest.values[metric.key]
-            return (
-              <div key={metric.key} className="flex flex-col gap-0.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-ink-dim">
-                    <span
-                      className="size-1.5 flex-none rounded-full"
-                      style={{ backgroundColor: metric.color }}
-                    />
-                    <span className="truncate">{metric.label}</span>
-                  </span>
-                  <span className="whitespace-nowrap font-mono text-[10px] tabular-nums text-ink">
-                    {typeof value === 'number' ? formatMetric(metric, value) : '—'}
-                  </span>
-                </div>
-                <Sparkline samples={samples} metric={metric} />
-              </div>
-            )
-          })}
-        </div>
-      )}
+      <TelemetryMetrics metrics={telemetry.metrics} samples={samples} />
 
       <p className="m-0 mt-1.5 border-t border-line pt-1.5 text-[9px] leading-none text-ink-faint">
         有界缓存 · 暂停后冻结采样

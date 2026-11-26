@@ -1,66 +1,129 @@
 import { useEffect, useRef } from 'react'
+import { MotionConfig } from 'motion/react'
 import { CanvasStage } from './components/CanvasStage'
 import { ControlBar } from './components/ControlBar'
+import { InspectorPanel } from './components/InspectorPanel'
 import { SidePanel } from './components/SidePanel'
 import { TopBar } from './components/TopBar'
 import { useAISandbox } from './hooks/useAISandbox'
 import { useAutoHeal } from './hooks/useAutoHeal'
 import { useExperimentRuntime } from './hooks/useExperimentRuntime'
+import { useFloatingBallListener } from './hooks/useFloatingBallListener'
 import { useWorkspaceAutoSave } from './hooks/useWorkspaceAutoSave'
 import { useWorkbenchStore } from './store/useWorkbenchStore'
 import { useWorkspaceStore } from './store/useWorkspaceStore'
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const source = useWorkbenchStore((state) => state.source)
   const presentation = useWorkbenchStore((state) => state.presentation)
+  const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
+  const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
   const exitPresentation = useWorkbenchStore((state) => state.exitPresentation)
+  const toggleLeftPanel = useWorkbenchStore((state) => state.toggleLeftPanel)
+  const toggleRightPanel = useWorkbenchStore((state) => state.toggleRightPanel)
   const hydrateWorkspace = useWorkspaceStore((state) => state.hydrate)
   const runtime = useExperimentRuntime(canvasRef)
   const aiSandbox = useAISandbox(iframeRef)
   const isAi = source === 'ai'
   useAutoHeal()
   useWorkspaceAutoSave()
+  useFloatingBallListener()
+
+  const activeControls = isAi ? aiSandbox : runtime
 
   useEffect(() => {
     void hydrateWorkspace()
   }, [hydrateWorkspace])
 
   useEffect(() => {
-    if (!presentation) return undefined
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') exitPresentation()
+      if (event.key === 'Escape' && presentation) {
+        exitPresentation()
+        return
+      }
+
+      if (document.querySelector('[role="dialog"]')) return
+
+      const mod = event.metaKey || event.ctrlKey
+      if (mod && !event.altKey && !presentation) {
+        const lower = event.key.toLowerCase()
+        if (lower === 'b') {
+          event.preventDefault()
+          toggleLeftPanel()
+          return
+        }
+        if (lower === 'i') {
+          event.preventDefault()
+          toggleRightPanel()
+          return
+        }
+      }
+
+      if (mod || event.altKey || isEditableTarget(event.target)) return
+
+      if (event.code === 'Space' && !(event.target instanceof HTMLButtonElement)) {
+        event.preventDefault()
+        activeControls.toggle()
+        return
+      }
+
+      if (event.key === 'r' || event.key === 'R') {
+        event.preventDefault()
+        activeControls.reset()
+        return
+      }
+
+      if (event.key === '.') {
+        event.preventDefault()
+        activeControls.step()
+      }
     }
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [presentation, exitPresentation])
+  }, [presentation, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
+
+  const workspaceGridClass = presentation
+    ? 'grid min-h-0 flex-1 grid-cols-1'
+    : leftPanelOpen && rightPanelOpen
+      ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)_276px] min-[1280px]:grid-cols-[264px_minmax(0,1fr)_296px]'
+      : leftPanelOpen
+        ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)] min-[1280px]:grid-cols-[264px_minmax(0,1fr)]'
+        : rightPanelOpen
+          ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[minmax(0,1fr)_276px] min-[1280px]:grid-cols-[minmax(0,1fr)_296px]'
+          : 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-1'
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,190,214,0.38),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(224,162,121,0.26),transparent_60%)]">
-      <TopBar />
-      <div
-        className={
-          presentation
-            ? 'grid min-h-0 flex-1 grid-cols-1'
-            : 'grid min-h-0 flex-1 grid-cols-[264px_minmax(0,1fr)] max-[980px]:grid-cols-1 max-[980px]:grid-rows-[auto_minmax(0,1fr)]'
-        }
-      >
-        <SidePanel />
-        <main className="flex min-h-0 min-w-0 flex-col">
-          <CanvasStage
-            canvasRef={canvasRef}
-            iframeRef={iframeRef}
-            onRetry={isAi ? aiSandbox.retry : runtime.retry}
-          />
-          <ControlBar
-            onTogglePlay={isAi ? aiSandbox.toggle : runtime.toggle}
-            onStep={isAi ? aiSandbox.step : runtime.step}
-            onReset={isAi ? aiSandbox.reset : runtime.reset}
-          />
-        </main>
+    <MotionConfig reducedMotion="user">
+      <div className="flex h-svh w-full flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,190,214,0.38),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(224,162,121,0.26),transparent_60%)]">
+        <TopBar />
+        <div className={workspaceGridClass}>
+          <SidePanel />
+          <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+            <CanvasStage
+              canvasRef={canvasRef}
+              iframeRef={iframeRef}
+              onRetry={activeControls.retry}
+            />
+            <ControlBar
+              onTogglePlay={activeControls.toggle}
+              onStep={activeControls.step}
+              onReset={activeControls.reset}
+            />
+          </main>
+          <InspectorPanel />
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   )
 }
 

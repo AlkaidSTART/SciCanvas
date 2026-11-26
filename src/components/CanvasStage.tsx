@@ -39,11 +39,14 @@ export function CanvasStage({ canvasRef, iframeRef, onRetry }: CanvasStageProps)
   const status = useWorkbenchStore((state) => state.status)
   const error = useWorkbenchStore((state) => state.error)
   const heal = useWorkbenchStore((state) => state.heal)
+  const presentation = useWorkbenchStore((state) => state.presentation)
+  const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
   const resetToDefault = useWorkbenchStore((state) => state.resetToDefault)
   const restoreLastGoodAi = useWorkbenchStore((state) => state.restoreLastGoodAi)
   const resetHeal = useWorkbenchStore((state) => state.resetHeal)
   const retryFailedHeal = useWorkbenchStore((state) => state.retryFailedHeal)
   const showError = Boolean(error) && heal.status === 'idle'
+  const formulaDockedOnDesktop = !presentation && rightPanelOpen
 
   const formulaHtml = useMemo(
     () =>
@@ -70,7 +73,11 @@ export function CanvasStage({ canvasRef, iframeRef, onRetry }: CanvasStageProps)
         <canvas ref={canvasRef} className="block h-full w-full" />
       )}
 
-      <div className="formula-overlay pointer-events-none absolute left-[18px] top-[18px] w-[min(430px,calc(100%_-_150px))] rounded-xl border border-line bg-panel/85 px-4 pb-3.5 pt-[13px] shadow-[0_16px_36px_rgba(58,51,43,0.1)] backdrop-blur-md max-[980px]:w-[min(380px,calc(100%_-_36px))] max-[640px]:inset-x-3 max-[640px]:top-3 max-[640px]:w-auto max-[640px]:px-[13px] max-[640px]:py-[11px]">
+      <div
+        className={`formula-overlay pointer-events-none absolute left-[18px] top-[18px] w-[min(430px,calc(100%_-_150px))] rounded-xl border border-line bg-panel/85 px-4 pb-3.5 pt-[13px] shadow-[0_16px_36px_rgba(58,51,43,0.1)] backdrop-blur-md max-[959px]:w-[min(380px,calc(100%_-_36px))] max-[640px]:inset-x-3 max-[640px]:top-3 max-[640px]:w-auto max-[640px]:px-[13px] max-[640px]:py-[11px] ${
+          formulaDockedOnDesktop ? 'min-[960px]:hidden' : ''
+        }`}
+      >
         <div className="mb-2 flex flex-col gap-[3px]">
           <span className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-accent-strong">
             {experiment.domain}

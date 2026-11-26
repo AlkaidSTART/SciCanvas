@@ -84,3 +84,21 @@ export function AlertIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function PanelLeftIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.8" y="2.5" width="12.4" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M5.6 2.8v10.4" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+export function PanelRightIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.8" y="2.5" width="12.4" height="11" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M10.4 2.8v10.4" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  )
+}

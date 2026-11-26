@@ -162,8 +162,32 @@
   }
 }
 
+/* 桌面工作台内部面板细滚动条：温和不抢眼，避免溢出窗口。 */
+.workbench-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(92 74 54 / 0.2) transparent;
+}
+
+.workbench-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.workbench-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workbench-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(92 74 54 / 0.18);
+}
+
+.workbench-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(92 74 54 / 0.32);
+}
+
 /* 窄屏侧栏横向滚动时隐藏滚动条，避免在画布上方出现粗灰条。 */
-@media (max-width: 980px) {
+@media (max-width: 959px) {
   .preset-scroll {
     scrollbar-width: none;
   }
@@ -171,4 +195,13 @@
   .preset-scroll::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* 悬浮球窗口保持完全透明背景，避免出现矩形底色遮挡论文。 */
+html.floating-ball-window,
+html.floating-ball-window body,
+html.floating-ball-window #root {
+  min-width: 0;
+  background: transparent !important;
+  overflow: hidden;
 }

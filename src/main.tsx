@@ -2,9 +2,15 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { FloatingBallApp } from './components/FloatingBallApp.tsx'
+
+const isFloatingBallWindow =
+  new URLSearchParams(window.location.search).get('window') === 'floating-ball'
+
+if (isFloatingBallWindow) {
+  document.documentElement.classList.add('floating-ball-window')
+}
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+  <StrictMode>{isFloatingBallWindow ? <FloatingBallApp /> : <App />}</StrictMode>,
 )

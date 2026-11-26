@@ -10,6 +10,7 @@ import {
 } from '../ai/image'
 import type { SupportedImageType } from '../ai/image'
 import { buildRecognitionPrompt } from '../ai/recognition'
+import { useFloatingBallStore } from '../store/useFloatingBallStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 
 interface LoadedImage {
@@ -27,13 +28,19 @@ interface RecognitionDraft {
 const fieldClass =
   'resize-none rounded-[8px] border border-line bg-surface-soft px-2.5 py-[7px] text-[11px] leading-[1.55] text-ink placeholder:text-ink-faint focus:border-accent-line focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
 
+interface PaperImageInputProps {
+  onImageLoaded?: () => void
+}
+
 /**
  * 论文截图输入 → 多模态识别 → 用户确认编辑 → 复用 M3 文本生成。
  * 所有失败都停留在当前步骤，不替换画布上已有的实验。
  */
-export function PaperImageInput() {
+export function PaperImageInput({ onImageLoaded }: PaperImageInputProps = {}) {
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
   const presentation = useWorkbenchStore((state) => state.presentation)
+  const pendingImage = useFloatingBallStore((state) => state.pendingImage)
+  const setPendingImage = useFloatingBallStore((state) => state.setPendingImage)
 
   const [image, setImage] = useState<LoadedImage | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
@@ -80,12 +87,44 @@ export function PaperImageInput() {
         setAiError(null)
         setRecognition(null)
         setDraft(null)
+        onImageLoaded?.()
       } catch {
         setImageError('图片读取失败，请重新选择')
       }
     },
-    [recognizing, generating],
+    [recognizing, generating, onImageLoaded],
   )
+
+  // 接收悬浮球框选的论文公式截图，自动载入预览区等待识别。
+  useEffect(() => {
+    const consumePending = (pending: { dataUrl: string; name: string } | null) => {
+      if (!pending) return
+      const validation = validateImageDataUrl(pending.dataUrl)
+      useFloatingBallStore.getState().setPendingImage(null)
+      if (!validation.ok) {
+        setImageError(validation.message)
+        return
+      }
+      setImage({
+        dataUrl: pending.dataUrl,
+        mime: validation.mime,
+        name: pending.name,
+        size: validation.bytes,
+      })
+      setImageError(null)
+      setAiError(null)
+      setRecognition(null)
+      setDraft(null)
+      onImageLoaded?.()
+    }
+
+    const unsubscribe = useFloatingBallStore.subscribe((state, prevState) => {
+      if (state.pendingImage && state.pendingImage !== prevState.pendingImage) {
+        consumePending(state.pendingImage)
+      }
+    })
+    return unsubscribe
+  }, [onImageLoaded])
 
   // 在页面任意位置粘贴截图即可载入，文字粘贴不受影响。
   useEffect(() => {

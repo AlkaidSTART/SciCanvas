@@ -1,10 +1,16 @@
 import type {
   ControlDefinition,
   ControlValue,
+  CornerCase,
   ExperimentDefinition,
   ParamValues,
   SliderControl,
 } from '../types/experiment'
+
+/** 控件显示值与边界态声明完全一致时视为选中。 */
+export function isCornerCaseActive(cornerCase: CornerCase, params: ParamValues): boolean {
+  return Object.entries(cornerCase.params).every(([key, value]) => params[key] === value)
+}
 
 function decimalPlaces(value: number): number {
   const text = String(value)
