@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Scene2DExperimentSpec } from '../ai/schema'
 import { compileScene2DExperiment } from './scene2dRenderer'
+import type { Scene2DState } from './scene2dRenderer'
 
 function createMockCtx(): CanvasRenderingContext2D {
   return {
@@ -101,7 +102,7 @@ describe('compileScene2DExperiment', () => {
     const ctx = createMockCtx()
     const params = { A: 2, k: 1.5 }
     const s0 = experiment.model.createState(params)
-    const s1 = experiment.model.step(s0, params, 0.5)
+    const s1 = experiment.model.step(s0, params, 0.5) as Scene2DState
     expect(s1.t).toBeCloseTo(0.5, 6)
 
     experiment.model.draw(ctx, s1, params, { width: 800, height: 640 })

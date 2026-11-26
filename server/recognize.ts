@@ -4,6 +4,7 @@ import { validateImageDataUrl } from '../src/ai/image.ts'
 import { normalizeRecognition } from '../src/ai/recognition.ts'
 import type { RecognitionResult } from '../src/ai/recognition.ts'
 import type { AiServerConfig } from './generate.ts'
+import { buildVisionLlmRequest } from './llmAdapter.ts'
 import { extractContent, isRecord, parseModelJson } from './modelText.ts'
 
 export const RECOGNITION_SYSTEM_PROMPT = `你是 SciCanvas 的论文截图识别助手。用户会提供一张论文中的公式或机理示意图截图。请提取可用于构建交互实验的信息，并且只返回 JSON：
@@ -93,27 +94,21 @@ export async function recognizePaperImage(
 
   try {
     const fetchImpl = config.fetchImpl ?? fetch
-    const response = await fetchImpl(`${config.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const built = buildVisionLlmRequest({
+      apiFormat: config.apiFormat,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.visionModel || config.model,
+      systemPrompt: RECOGNITION_SYSTEM_PROMPT,
+      userText: RECOGNITION_INSTRUCTION,
+      imageDataUrl: image,
+      temperature: 0.2,
+      jsonMode: true,
+    })
+    const response = await fetchImpl(built.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.visionModel || config.model,
-        messages: [
-          { role: 'system', content: RECOGNITION_SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: RECOGNITION_INSTRUCTION },
-              { type: 'image_url', image_url: { url: image } },
-            ],
-          },
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      }),
+      headers: built.headers,
+      body: JSON.stringify(built.body),
       signal: controller.signal,
     })
 
@@ -126,7 +121,7 @@ export async function recognizePaperImage(
       return failure(502, 'invalid_json', '模型服务返回了无法解析的响应')
     }
 
-    const content = extractContent(payload)
+    const content = extractContent(payload, config.apiFormat)
     if (content === null) {
       return failure(502, 'invalid_json', '模型服务未返回可用的文本内容')
     }

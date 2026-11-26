@@ -49,10 +49,26 @@ CREATE TABLE IF NOT EXISTS generations (
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS llm_endpoints (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  is_preset INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 0,
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL,
+  vision_model TEXT NOT NULL DEFAULT '',
+  api_format TEXT NOT NULL DEFAULT 'chat',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_session_created ON session_messages(session_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_generations_session_created ON generations(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_generations_created ON generations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_endpoints_active ON llm_endpoints(is_active DESC, is_preset DESC, updated_at DESC);
 "#;
 
 const SESSION_SUMMARY_SELECT: &str = r#"
@@ -220,6 +236,7 @@ impl SqliteStore {
             .map_err(|err| format!("初始化 SQLite PRAGMA 失败: {err}"))?;
         conn.execute_batch(SCHEMA_SQL)
             .map_err(|err| format!("初始化 SQLite 表结构失败: {err}"))?;
+        seed_preset_llm_endpoints(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -702,4 +719,289 @@ pub fn sqlite_list_generations(
             .map_err(|err| format!("解析生成记录失败: {err}"))?;
         Ok(rows)
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmEndpointConfig {
+    pub id: String,
+    pub name: String,
+    pub provider_id: String,
+    pub is_preset: bool,
+    pub is_active: bool,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub vision_model: String,
+    pub api_format: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListLlmEndpointsResponse {
+    pub endpoints: Vec<LlmEndpointConfig>,
+    pub db_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertLlmEndpointInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub provider_id: Option<String>,
+    pub is_preset: Option<bool>,
+    pub is_active: Option<bool>,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub vision_model: Option<String>,
+    pub api_format: String,
+}
+
+fn normalize_api_format(raw: &str) -> &'static str {
+    match raw {
+        "response" => "response",
+        "anthropic" => "anthropic",
+        _ => "chat",
+    }
+}
+
+fn seed_preset_llm_endpoints(conn: &Connection) -> Result<(), String> {
+    let presets: [(&str, &str, &str, &str, &str, &str, &str); 5] = [
+        (
+            "preset-deepseek",
+            "DeepSeek",
+            "deepseek",
+            "https://api.deepseek.com/v1",
+            "deepseek-chat",
+            "",
+            "chat",
+        ),
+        (
+            "preset-doubao",
+            "豆包 (Doubao)",
+            "doubao",
+            "https://ark.cn-beijing.volces.com/api/v3",
+            "doubao-1-5-pro-32k-250115",
+            "doubao-1-5-vision-pro-32k-250115",
+            "chat",
+        ),
+        (
+            "preset-qwen",
+            "通义千问 (Qwen)",
+            "qwen",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "qwen-plus",
+            "qwen-vl-max",
+            "chat",
+        ),
+        (
+            "preset-openai",
+            "OpenAI",
+            "openai",
+            "https://api.openai.com/v1",
+            "gpt-4o-mini",
+            "gpt-4o-mini",
+            "response",
+        ),
+        (
+            "preset-anthropic",
+            "Anthropic (Claude)",
+            "anthropic",
+            "https://api.anthropic.com/v1",
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4-20250514",
+            "anthropic",
+        ),
+    ];
+
+    let seed_base: i64 = 1_700_000_000_000;
+    for (idx, (id, name, provider_id, base_url, model, vision_model, api_format)) in
+        presets.iter().enumerate()
+    {
+        let ts = seed_base + idx as i64;
+        conn.execute(
+            "INSERT OR IGNORE INTO llm_endpoints (
+                id, name, provider_id, is_preset, is_active, base_url, api_key,
+                model, vision_model, api_format, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, 1, 0, ?4, '', ?5, ?6, ?7, ?8, ?9)",
+            params![id, name, provider_id, base_url, model, vision_model, api_format, ts, ts],
+        )
+        .map_err(|err| format!("初始化内置大模型端点失败: {err}"))?;
+    }
+    Ok(())
+}
+
+fn read_llm_endpoint_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LlmEndpointConfig> {
+    let is_preset: i64 = row.get(3)?;
+    let is_active: i64 = row.get(4)?;
+    let raw_format: String = row.get(9)?;
+    Ok(LlmEndpointConfig {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        provider_id: row.get(2)?,
+        is_preset: is_preset == 1,
+        is_active: is_active == 1,
+        base_url: row.get(5)?,
+        api_key: row.get(6)?,
+        model: row.get(7)?,
+        vision_model: row.get(8)?,
+        api_format: normalize_api_format(&raw_format).to_string(),
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+fn query_llm_endpoint(conn: &Connection, id: &str) -> Result<Option<LlmEndpointConfig>, String> {
+    conn.query_row(
+        "SELECT id, name, provider_id, is_preset, is_active, base_url, api_key,
+                model, vision_model, api_format, created_at, updated_at
+         FROM llm_endpoints
+         WHERE id = ?1",
+        params![id],
+        read_llm_endpoint_row,
+    )
+    .optional()
+    .map_err(|err| format!("查询大模型端点失败: {err}"))
+}
+
+#[tauri::command]
+pub fn sqlite_list_llm_endpoints(
+    store: State<'_, SqliteStore>,
+) -> Result<ListLlmEndpointsResponse, String> {
+    let conn = store.conn.lock().map_err(|_| "数据库锁异常".to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, provider_id, is_preset, is_active, base_url, api_key,
+                    model, vision_model, api_format, created_at, updated_at
+             FROM llm_endpoints
+             ORDER BY is_preset DESC, CASE WHEN is_preset = 1 THEN created_at ELSE -updated_at END ASC",
+        )
+        .map_err(|err| format!("查询大模型端点列表失败: {err}"))?;
+    let endpoints = stmt
+        .query_map([], read_llm_endpoint_row)
+        .map_err(|err| format!("读取大模型端点列表失败: {err}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| format!("解析大模型端点列表失败: {err}"))?;
+    Ok(ListLlmEndpointsResponse {
+        endpoints,
+        db_path: store.db_path.clone(),
+    })
+}
+
+#[tauri::command]
+pub fn sqlite_upsert_llm_endpoint(
+    store: State<'_, SqliteStore>,
+    input: UpsertLlmEndpointInput,
+) -> Result<LlmEndpointConfig, String> {
+    let mut conn = store.conn.lock().map_err(|_| "数据库锁异常".to_string())?;
+    let now = now_ms();
+    let id = input
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("custom-{}", Uuid::new_v4()));
+
+    let existing = query_llm_endpoint(&conn, &id)?;
+    let is_preset = existing
+        .as_ref()
+        .map(|e| e.is_preset)
+        .unwrap_or_else(|| input.is_preset.unwrap_or(false));
+    let is_active = input
+        .is_active
+        .unwrap_or_else(|| existing.as_ref().map(|e| e.is_active).unwrap_or(false));
+    let provider_id = input
+        .provider_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| existing.as_ref().map(|e| e.provider_id.clone()))
+        .unwrap_or_else(|| "custom".to_string());
+    let created_at = existing.as_ref().map(|e| e.created_at).unwrap_or(now);
+    let base_url = input.base_url.trim().trim_end_matches('/').to_string();
+    let api_format = normalize_api_format(&input.api_format);
+
+    let tx = conn
+        .transaction()
+        .map_err(|err| format!("开启事务失败: {err}"))?;
+    if is_active {
+        tx.execute("UPDATE llm_endpoints SET is_active = 0 WHERE is_active = 1", [])
+            .map_err(|err| format!("重置激活端点失败: {err}"))?;
+    }
+    tx.execute(
+        "INSERT INTO llm_endpoints (
+            id, name, provider_id, is_preset, is_active, base_url, api_key,
+            model, vision_model, api_format, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            provider_id = excluded.provider_id,
+            is_active = excluded.is_active,
+            base_url = excluded.base_url,
+            api_key = excluded.api_key,
+            model = excluded.model,
+            vision_model = excluded.vision_model,
+            api_format = excluded.api_format,
+            updated_at = excluded.updated_at",
+        params![
+            id,
+            input.name.trim(),
+            provider_id,
+            if is_preset { 1 } else { 0 },
+            if is_active { 1 } else { 0 },
+            base_url,
+            input.api_key.trim(),
+            input.model.trim(),
+            input.vision_model.as_deref().unwrap_or("").trim(),
+            api_format,
+            created_at,
+            now
+        ],
+    )
+    .map_err(|err| format!("保存大模型端点失败: {err}"))?;
+    tx.commit().map_err(|err| format!("提交事务失败: {err}"))?;
+
+    query_llm_endpoint(&conn, &id)?.ok_or_else(|| "保存端点后读取失败".to_string())
+}
+
+#[tauri::command]
+pub fn sqlite_set_active_llm_endpoint(
+    store: State<'_, SqliteStore>,
+    endpoint_id: String,
+) -> Result<LlmEndpointConfig, String> {
+    let mut conn = store.conn.lock().map_err(|_| "数据库锁异常".to_string())?;
+    if query_llm_endpoint(&conn, &endpoint_id)?.is_none() {
+        return Err("模型端点不存在".to_string());
+    }
+    let now = now_ms();
+    let tx = conn
+        .transaction()
+        .map_err(|err| format!("开启事务失败: {err}"))?;
+    tx.execute("UPDATE llm_endpoints SET is_active = 0 WHERE is_active = 1", [])
+        .map_err(|err| format!("重置激活端点失败: {err}"))?;
+    tx.execute(
+        "UPDATE llm_endpoints SET is_active = 1, updated_at = ?1 WHERE id = ?2",
+        params![now, endpoint_id],
+    )
+    .map_err(|err| format!("设置激活端点失败: {err}"))?;
+    tx.commit().map_err(|err| format!("提交事务失败: {err}"))?;
+
+    query_llm_endpoint(&conn, &endpoint_id)?.ok_or_else(|| "读取激活端点失败".to_string())
+}
+
+#[tauri::command]
+pub fn sqlite_delete_llm_endpoint(
+    store: State<'_, SqliteStore>,
+    endpoint_id: String,
+) -> Result<bool, String> {
+    let conn = store.conn.lock().map_err(|_| "数据库锁异常".to_string())?;
+    let changed = conn
+        .execute("DELETE FROM llm_endpoints WHERE id = ?1", params![endpoint_id])
+        .map_err(|err| format!("删除大模型端点失败: {err}"))?;
+    Ok(changed > 0)
 }

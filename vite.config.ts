@@ -5,6 +5,8 @@ import { defineConfig, loadEnv } from 'vite'
 import { aiProxyPlugin } from './server/aiProxy.ts'
 import { standalonePlayerPlugin } from './server/playerBundle.ts'
 import { sessionApiPlugin } from './server/sessionApi.ts'
+import { createSqliteSessionStore } from './server/sqliteStore.ts'
+import type { SqliteSessionStore } from './server/sqliteStore.ts'
 
 const DEFAULT_TASK_TIMEOUT_MS = 45_000
 const host = process.env.TAURI_DEV_HOST
@@ -14,6 +16,14 @@ export default defineConfig(({ mode }) => {
   // 模型凭证只在此构建进程中使用，不会注入客户端环境变量。
   const env = loadEnv(mode, process.cwd(), '')
   const timeoutMs = Number(env.AI_TIMEOUT_MS)
+  const dbPath = env.SCICANVAS_DB_PATH || undefined
+  let sharedStore: SqliteSessionStore | null = null
+  const getSharedStore = () => {
+    if (!sharedStore) {
+      sharedStore = createSqliteSessionStore(dbPath)
+    }
+    return sharedStore
+  }
 
   return {
     clearScreen: false,
@@ -38,7 +48,8 @@ export default defineConfig(({ mode }) => {
       babel({ presets: [reactCompilerPreset()] }),
       standalonePlayerPlugin(),
       sessionApiPlugin({
-        dbPath: env.SCICANVAS_DB_PATH || undefined,
+        dbPath,
+        store: getSharedStore(),
       }),
       aiProxyPlugin({
         apiKey: env.AI_API_KEY,
@@ -49,6 +60,7 @@ export default defineConfig(({ mode }) => {
           Number.isFinite(timeoutMs) && timeoutMs > 0
             ? timeoutMs
             : DEFAULT_TASK_TIMEOUT_MS,
+        getActiveEndpoint: () => getSharedStore().getActiveLlmEndpoint(),
       }),
     ],
   }

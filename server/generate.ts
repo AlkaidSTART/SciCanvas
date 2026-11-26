@@ -8,7 +8,9 @@ import {
 import type { GenerationMode, RepairDiagnostic } from '../src/ai/prompt.ts'
 import { validateGeneratedSpec } from '../src/ai/schema.ts'
 import type { GeneratedExperimentSpec } from '../src/ai/schema.ts'
+import type { LlmApiFormat } from '../src/models/types.ts'
 import type { ControlValue } from '../src/types/experiment.ts'
+import { buildTextLlmRequest } from './llmAdapter.ts'
 import { extractContent, isRecord, parseModelJson } from './modelText.ts'
 
 export interface AiServerConfig {
@@ -17,6 +19,8 @@ export interface AiServerConfig {
   model: string
   /** 多模态识别使用的模型；缺省时回退到 model。 */
   visionModel?: string
+  /** 回复协议格式：chat / response / anthropic，缺省为 chat。 */
+  apiFormat?: LlmApiFormat
   timeoutMs: number
   fetchImpl?: typeof fetch
 }
@@ -181,24 +185,29 @@ export async function generateExperiment(
 
   try {
     const fetchImpl = config.fetchImpl ?? fetch
-    const response = await fetchImpl(`${config.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const messages = buildGenerationMessages({
+      prompt,
+      mode,
+      currentSpec,
+      currentParams,
+      diagnostic,
+    })
+    const systemMessage = messages.find((m) => m.role === 'system')?.content ?? ''
+    const userMessage = messages.find((m) => m.role === 'user')?.content ?? prompt
+    const built = buildTextLlmRequest({
+      apiFormat: config.apiFormat,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      systemPrompt: systemMessage,
+      userPrompt: userMessage,
+      temperature: mode === 'repair' ? 0.3 : mode === 'refine' ? 0.5 : 0.6,
+      jsonMode: true,
+    })
+    const response = await fetchImpl(built.url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: buildGenerationMessages({
-          prompt,
-          mode,
-          currentSpec,
-          currentParams,
-          diagnostic,
-        }),
-        temperature: mode === 'repair' ? 0.3 : mode === 'refine' ? 0.5 : 0.6,
-        response_format: { type: 'json_object' },
-      }),
+      headers: built.headers,
+      body: JSON.stringify(built.body),
       signal: controller.signal,
     })
 
@@ -219,7 +228,7 @@ export async function generateExperiment(
       return failure(502, 'invalid_json', '模型服务返回了无法解析的响应')
     }
 
-    const content = extractContent(payload)
+    const content = extractContent(payload, config.apiFormat)
     if (content === null) {
       return failure(502, 'invalid_json', '模型服务未返回可用的文本内容')
     }

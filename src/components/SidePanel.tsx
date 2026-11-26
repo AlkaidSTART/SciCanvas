@@ -12,6 +12,7 @@ import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { SettingsIcon } from './icons'
 import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 import { PaperImageInput } from './PaperImageInput'
+import { WorkspaceDialog } from './WorkspaceDialog'
 
 interface SidePanelProps {
   route: AppRoute
@@ -68,6 +69,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
   const resetToDefault = useWorkbenchStore((state) => state.resetToDefault)
 
   const [activeTab, setActiveTab] = useState<'presets' | 'ai'>('presets')
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const prompt = useFloatingBallStore((state) => state.promptDraft)
   const setPrompt = useFloatingBallStore((state) => state.setPromptDraft)
   const floatingBallOpen = useFloatingBallStore((state) => state.floatingBallOpen)
@@ -273,7 +275,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
         aria-label="左侧栏切换"
       >
         <button
-          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+          className={`relative flex flex-1 items-center justify-center gap-1 rounded-[7px] px-1.5 py-1 text-[11px] font-medium transition-colors ${
             !isSettings && activeTab === 'presets'
               ? 'text-ink'
               : 'text-ink-faint hover:text-ink-dim'
@@ -299,7 +301,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           </span>
         </button>
         <button
-          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+          className={`relative flex flex-1 items-center justify-center gap-1 rounded-[7px] px-1.5 py-1 text-[11px] font-medium transition-colors ${
             !isSettings && activeTab === 'ai' ? 'text-ink' : 'text-ink-faint hover:text-ink-dim'
           }`}
           type="button"
@@ -322,6 +324,19 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           )}
           <span className="relative z-[1]">AI 沙盒</span>
         </button>
+        <motion.button
+          whileTap={TAP_BUTTON}
+          className={`flex flex-none items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+            workspaceOpen
+              ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
+              : 'text-ink-faint hover:bg-surface/60 hover:text-ink-dim'
+          }`}
+          type="button"
+          onClick={() => setWorkspaceOpen(true)}
+          title="打开工作区记录与模型配置"
+        >
+          工作区
+        </motion.button>
       </div>
 
       <div className="workbench-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-3 max-[959px]:flex-row max-[959px]:overflow-visible max-[959px]:p-0">
@@ -628,6 +643,10 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           {source === 'ai' ? 'AI 隔离沙盒 · 无网络权限' : '本地内置实验 · 无需登录 / API'}
         </span>
       </div>
+
+      <AnimatePresence>
+        {workspaceOpen && <WorkspaceDialog onClose={() => setWorkspaceOpen(false)} />}
+      </AnimatePresence>
     </aside>
   )
 }

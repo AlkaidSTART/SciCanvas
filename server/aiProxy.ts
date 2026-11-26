@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 import { MAX_IMAGE_BYTES } from '../src/ai/image.ts'
+import type { LlmEndpointConfig } from '../src/models/types.ts'
 import type { AiServerConfig } from './generate.ts'
 import { generateExperiment } from './generate.ts'
 import { recognizePaperImage } from './recognize.ts'
@@ -77,7 +78,28 @@ function readJsonBody(req: IncomingMessage, limit: number): Promise<unknown> {
   })
 }
 
-function createMiddleware(config: AiServerConfig) {
+export interface AiProxyPluginOptions extends AiServerConfig {
+  /** 从 SQLite 动态解析当前激活的大模型端点；存在且含 API Key 时优先使用。 */
+  getActiveEndpoint?: () => LlmEndpointConfig | null
+}
+
+function resolveRuntimeConfig(options: AiProxyPluginOptions): AiServerConfig {
+  const active = options.getActiveEndpoint?.()
+  if (active && active.apiKey.trim() && active.baseUrl.trim()) {
+    return {
+      apiKey: active.apiKey.trim(),
+      baseUrl: active.baseUrl.trim(),
+      model: active.model.trim() || options.model,
+      visionModel: active.visionModel.trim() || active.model.trim() || options.visionModel,
+      apiFormat: active.apiFormat,
+      timeoutMs: options.timeoutMs,
+      fetchImpl: options.fetchImpl,
+    }
+  }
+  return options
+}
+
+function createMiddleware(options: AiProxyPluginOptions) {
   return (
     req: IncomingMessage,
     res: ServerResponse,
@@ -140,10 +162,11 @@ function createMiddleware(config: AiServerConfig) {
         return
       }
 
+      const runtimeConfig = resolveRuntimeConfig(options)
       const result =
         route === 'recognize'
-          ? await recognizePaperImage(body, config)
-          : await generateExperiment(body, config)
+          ? await recognizePaperImage(body, runtimeConfig)
+          : await generateExperiment(body, runtimeConfig)
       sendJson(res, result.status, result.body)
     })().catch(() => {
       if (!res.headersSent) {
@@ -158,16 +181,16 @@ function createMiddleware(config: AiServerConfig) {
 
 /**
  * Vite 开发与预览服务器的同源代理插件。
- * 模型凭证只从构建进程的环境变量读取，不进入客户端 bundle。
+ * 优先使用 SQLite 中激活的大模型端点配置，未配置时回退到环境变量。
  */
-export function aiProxyPlugin(config: AiServerConfig): Plugin {
+export function aiProxyPlugin(options: AiProxyPluginOptions): Plugin {
   return {
     name: 'scicanvas-ai-proxy',
     configureServer(server) {
-      server.middlewares.use(createMiddleware(config))
+      server.middlewares.use(createMiddleware(options))
     },
     configurePreviewServer(server) {
-      server.middlewares.use(createMiddleware(config))
+      server.middlewares.use(createMiddleware(options))
     },
   }
 }

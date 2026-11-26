@@ -971,7 +971,7 @@ function drawCompiledElement(
 export function compileScene2DExperiment(
   spec: Scene2DExperimentSpec,
   id = 'ai-generated',
-): ExperimentDefinition<Scene2DState> {
+): ExperimentDefinition {
   const scene = spec.scene
   const allowedBase = new Set<string>(['t', ...spec.controls.map((control) => control.key)])
   const compiledVars: Array<{ key: string; evaluate: ExprEvaluator }> = []
@@ -1118,7 +1118,7 @@ export function compileScene2DExperiment(
     }
   }
 
-  return {
+  const definition: ExperimentDefinition<Scene2DState> = {
     id,
     title: spec.title,
     domain: spec.domain,
@@ -1131,6 +1131,7 @@ export function compileScene2DExperiment(
     probe,
     model,
   }
+  return definition as unknown as ExperimentDefinition
 }
 
 export { MONO_FONT }

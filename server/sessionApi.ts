@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 import { validateGeneratedSpec } from '../src/ai/schema.ts'
+import { validateLlmEndpointInput } from '../src/models/presets.ts'
+import type { UpsertLlmEndpointInput } from '../src/models/types.ts'
 import type {
   AppendMessageInput,
   CreateSessionInput,
@@ -64,7 +66,11 @@ export function createSessionApiMiddleware(store: SqliteSessionStore) {
     const url = new URL(rawUrl, 'http://localhost')
     const pathname = url.pathname
 
-    if (!pathname.startsWith('/api/sessions') && !pathname.startsWith('/api/generations')) {
+    if (
+      !pathname.startsWith('/api/sessions') &&
+      !pathname.startsWith('/api/generations') &&
+      !pathname.startsWith('/api/llm-endpoints')
+    ) {
       next()
       return
     }
@@ -239,6 +245,114 @@ export function createSessionApiMiddleware(store: SqliteSessionStore) {
         return
       }
 
+      // GET /api/llm-endpoints
+      if (pathname === '/api/llm-endpoints' && method === 'GET') {
+        const endpoints = store.listLlmEndpoints()
+        sendJson(res, 200, { ok: true, endpoints, dbPath: store.dbPath })
+        return
+      }
+
+      // POST /api/llm-endpoints
+      if (pathname === '/api/llm-endpoints' && method === 'POST') {
+        const body = await readJsonBody(req)
+        if (!isRecord(body)) {
+          sendJson(res, 400, { ok: false, error: '请求体格式不合法' })
+          return
+        }
+        const draft: UpsertLlmEndpointInput = {
+          id: typeof body.id === 'string' ? body.id : undefined,
+          name: typeof body.name === 'string' ? body.name : '',
+          providerId: typeof body.providerId === 'string' ? body.providerId : undefined,
+          isPreset: typeof body.isPreset === 'boolean' ? body.isPreset : undefined,
+          isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
+          baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : '',
+          apiKey: typeof body.apiKey === 'string' ? body.apiKey : '',
+          model: typeof body.model === 'string' ? body.model : '',
+          visionModel: typeof body.visionModel === 'string' ? body.visionModel : '',
+          apiFormat: body.apiFormat as UpsertLlmEndpointInput['apiFormat'],
+        }
+        const validation = validateLlmEndpointInput(draft)
+        if (!validation.ok) {
+          sendJson(res, 400, { ok: false, error: validation.message })
+          return
+        }
+        const endpoint = store.upsertLlmEndpoint(validation.value)
+        sendJson(res, 200, { ok: true, endpoint })
+        return
+      }
+
+      // POST /api/llm-endpoints/:id/activate
+      const activateEndpointMatch = pathname.match(/^\/api\/llm-endpoints\/([^/]+)\/activate$/)
+      if (activateEndpointMatch) {
+        if (method !== 'POST') {
+          res.setHeader('Allow', 'POST')
+          sendJson(res, 405, { ok: false, error: '仅支持 POST 请求' })
+          return
+        }
+        const id = decodeURIComponent(activateEndpointMatch[1])
+        const endpoint = store.setActiveLlmEndpoint(id)
+        if (!endpoint) {
+          sendJson(res, 404, { ok: false, error: '模型端点不存在' })
+          return
+        }
+        sendJson(res, 200, { ok: true, endpoint })
+        return
+      }
+
+      // GET / PUT / DELETE /api/llm-endpoints/:id
+      const singleEndpointMatch = pathname.match(/^\/api\/llm-endpoints\/([^/]+)$/)
+      if (singleEndpointMatch) {
+        const id = decodeURIComponent(singleEndpointMatch[1])
+        if (method === 'GET') {
+          const endpoint = store.getLlmEndpoint(id)
+          if (!endpoint) {
+            sendJson(res, 404, { ok: false, error: '模型端点不存在' })
+            return
+          }
+          sendJson(res, 200, { ok: true, endpoint })
+          return
+        }
+        if (method === 'PUT') {
+          const body = await readJsonBody(req)
+          if (!isRecord(body)) {
+            sendJson(res, 400, { ok: false, error: '请求体格式不合法' })
+            return
+          }
+          const draft: UpsertLlmEndpointInput = {
+            id,
+            name: typeof body.name === 'string' ? body.name : '',
+            providerId: typeof body.providerId === 'string' ? body.providerId : undefined,
+            isPreset: typeof body.isPreset === 'boolean' ? body.isPreset : undefined,
+            isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
+            baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : '',
+            apiKey: typeof body.apiKey === 'string' ? body.apiKey : '',
+            model: typeof body.model === 'string' ? body.model : '',
+            visionModel: typeof body.visionModel === 'string' ? body.visionModel : '',
+            apiFormat: body.apiFormat as UpsertLlmEndpointInput['apiFormat'],
+          }
+          const validation = validateLlmEndpointInput(draft)
+          if (!validation.ok) {
+            sendJson(res, 400, { ok: false, error: validation.message })
+            return
+          }
+          const endpoint = store.upsertLlmEndpoint(validation.value)
+          sendJson(res, 200, { ok: true, endpoint })
+          return
+        }
+        if (method === 'DELETE') {
+          const deleted = store.deleteLlmEndpoint(id)
+          if (!deleted) {
+            sendJson(res, 404, { ok: false, error: '模型端点不存在' })
+            return
+          }
+          sendJson(res, 200, { ok: true })
+          return
+        }
+        res.setHeader('Allow', 'GET, PUT, DELETE')
+        sendJson(res, 405, { ok: false, error: '不支持的请求方法' })
+        return
+      }
+
       sendJson(res, 404, { ok: false, error: '接口不存在' })
     })().catch((error: unknown) => {
       if (res.headersSent) return
@@ -258,18 +372,20 @@ export function createSessionApiMiddleware(store: SqliteSessionStore) {
 
 export interface SessionApiPluginOptions {
   dbPath?: string
+  store?: SqliteSessionStore
 }
 
 /**
- * Vite 开发与预览服务器的 SQLite 会话持久化插件。
+ * Vite 开发与预览服务器的 SQLite 会话与模型配置持久化插件。
  */
 export function sessionApiPlugin(options: SessionApiPluginOptions = {}): Plugin {
-  let store: SqliteSessionStore | null = null
+  let ownedStore: SqliteSessionStore | null = null
   const getStore = () => {
-    if (!store) {
-      store = createSqliteSessionStore(options.dbPath || undefined)
+    if (options.store) return options.store
+    if (!ownedStore) {
+      ownedStore = createSqliteSessionStore(options.dbPath || undefined)
     }
-    return store
+    return ownedStore
   }
 
   return {
@@ -277,15 +393,15 @@ export function sessionApiPlugin(options: SessionApiPluginOptions = {}): Plugin 
     configureServer(server) {
       server.middlewares.use(createSessionApiMiddleware(getStore()))
       server.httpServer?.once('close', () => {
-        store?.close()
-        store = null
+        ownedStore?.close()
+        ownedStore = null
       })
     },
     configurePreviewServer(server) {
       server.middlewares.use(createSessionApiMiddleware(getStore()))
       server.httpServer?.once('close', () => {
-        store?.close()
-        store = null
+        ownedStore?.close()
+        ownedStore = null
       })
     },
   }

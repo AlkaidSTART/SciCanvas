@@ -47,6 +47,7 @@ pub fn floating_ball_open(app: AppHandle) -> Result<PermissionStatus, String> {
     .shadow(false)
     .always_on_top(true)
     .skip_taskbar(true)
+    .focused(false)
     .visible(true);
 
     if let Ok(Some(monitor)) = app.primary_monitor() {

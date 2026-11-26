@@ -104,16 +104,25 @@ export interface BuildWorkspaceRecordInput {
   now?: number
 }
 
+function specContentSignature(spec: GeneratedExperimentSpec | null | undefined): string | null {
+  if (!spec) return null
+  return spec.renderType === 'scene2d'
+    ? `scene2d:${JSON.stringify(spec.scene)}`
+    : `canvas2d:${spec.simulationCode}`
+}
+
 /**
  * 组装一条可写入的记录：保留用户重命名与收藏状态，
- * 只有 AI 代码真正变化时才递增代码版本。
+ * 只有 AI 代码或声明式场景真正变化时才递增版本。
  */
 export function buildWorkspaceRecord(input: BuildWorkspaceRecordInput): WorkspaceRecord {
   const now = input.now ?? Date.now()
   const existing = input.existing
   const spec = input.source === 'ai' ? input.spec : null
   const codeChanged =
-    input.source === 'ai' && spec !== null && spec.simulationCode !== existing?.spec?.simulationCode
+    input.source === 'ai' &&
+    spec !== null &&
+    specContentSignature(spec) !== specContentSignature(existing?.spec)
 
   let codeVersion = 0
   if (input.source === 'ai') {
