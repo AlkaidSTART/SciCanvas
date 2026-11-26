@@ -15,6 +15,7 @@ import { openDrawingWindow } from '../workspace/windowActions'
 import { ModelIcon, PlusIcon, SettingsIcon } from './icons'
 import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 import { PaperImageInput } from './PaperImageInput'
+import { WorkspaceSidebarTree } from './WorkspaceSidebarTree'
 
 interface SidePanelProps {
   route: AppRoute
@@ -68,6 +69,8 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
   const entries = useWorkspaceStore((state) => state.entries)
   const createPresetWindow = useWorkspaceStore((state) => state.createPresetWindow)
 
+  /** 左侧栏当前面板：'workspace' 显示 Codex 风格实验/窗口树，'sandbox' 显示 AI 沙盒。 */
+  const [sidebarTab, setSidebarTab] = useState<'workspace' | 'sandbox'>('workspace')
   /** 默认情况下每次绘图新开独立实验窗口；也可切换为归入当前实验组新开窗口。 */
   const [spawnMode, setSpawnMode] = useState<'new-experiment' | 'same-experiment'>('new-experiment')
   const prompt = useFloatingBallStore((state) => state.promptDraft)
@@ -98,6 +101,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
     let rafId: number | null = null
     const unsubscribe = useFloatingBallStore.subscribe((state, prevState) => {
       if (state.promptFlashKey === prevState.promptFlashKey) return
+      setSidebarTab('sandbox')
       onNavigate('workbench')
       setPromptHighlighted(true)
       if (rafId !== null) window.cancelAnimationFrame(rafId)
@@ -327,17 +331,20 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
         <motion.button
           whileTap={TAP_BUTTON}
           className={`relative flex flex-1 items-center justify-center gap-1 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            isWorkspace
+            sidebarTab === 'workspace' && !isSettings && !isModels
               ? 'text-ink'
               : 'text-ink-faint hover:bg-surface/60 hover:text-ink-dim'
           }`}
           type="button"
           role="tab"
-          aria-selected={isWorkspace}
-          onClick={() => onNavigate('workspace')}
-          title="打开科研工作区，统一管理全部实验与绘画窗口 (/workspace)"
+          aria-selected={sidebarTab === 'workspace' && !isSettings && !isModels}
+          onClick={() => {
+            setSidebarTab('workspace')
+            if (isSettings || isModels) onNavigate('workbench')
+          }}
+          title="查看实验列表与绘画窗口"
         >
-          {isWorkspace && (
+          {sidebarTab === 'workspace' && !isSettings && !isModels && (
             <motion.span
               layoutId="sidepanel-tab-pill"
               transition={SPRING_SNAPPY}
@@ -353,18 +360,19 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
         </motion.button>
         <button
           className={`relative flex flex-1 items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            !isSubPage
+            sidebarTab === 'sandbox' && !isSubPage
               ? 'text-ink'
               : 'text-ink-faint hover:text-ink-dim'
           }`}
           type="button"
           role="tab"
-          aria-selected={!isSubPage}
+          aria-selected={sidebarTab === 'sandbox' && !isSubPage}
           onClick={() => {
+            setSidebarTab('sandbox')
             if (isSubPage) onNavigate('workbench')
           }}
         >
-          {!isSubPage && (
+          {sidebarTab === 'sandbox' && !isSubPage && (
             <motion.span
               layoutId="sidepanel-tab-pill"
               transition={SPRING_SNAPPY}
@@ -375,6 +383,16 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
         </button>
       </div>
 
+      {sidebarTab === 'workspace' ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-[959px]:hidden">
+          <WorkspaceSidebarTree
+            onSelectWindow={() => {
+              if (isSubPage) onNavigate('workbench')
+            }}
+            onOpenFullManager={() => onNavigate(isWorkspace ? 'workbench' : 'workspace')}
+          />
+        </div>
+      ) : (
       <div className="workbench-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-3 max-[959px]:hidden">
         <section className="flex flex-col gap-2.5">
           {/* 当前实验与同实验绘画窗口列表（Codex / Claude 风格） */}
@@ -631,6 +649,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           </AnimatePresence>
         </section>
       </div>
+      )}
 
       <div className="flex flex-none flex-col gap-1 border-t border-line px-2 py-2 max-[959px]:flex-row max-[959px]:items-center max-[959px]:border-l max-[959px]:border-t-0 max-[959px]:py-0 max-[959px]:pl-2.5">
         <motion.button
