@@ -25,7 +25,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function TopBar({ route, onNavigate }: TopBarProps) {
-  const isSettings = route === 'settings'
+  const isSubPage = route !== 'workbench'
   const title = useWorkbenchStore((state) => state.experiment.title)
   const domain = useWorkbenchStore((state) => state.experiment.domain)
   const presentation = useWorkbenchStore((state) => state.presentation)
@@ -85,7 +85,7 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
     }
   }
 
-  if (presentation && !isSettings) {
+  if (presentation && !isSubPage) {
     return (
       <motion.header
         key="presentation-header"
@@ -219,22 +219,11 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
                 className="hidden items-center gap-1 whitespace-nowrap border-l border-line pl-2 text-[10px] text-ink-faint min-[1200px]:inline-flex"
                 title={storageError?.message}
               >
-                {storageError ? (
-                  <>
-                    <span className="size-1.5 rounded-full bg-danger" />
-                    本地保存不可用
-                  </>
-                ) : saving ? (
-                  <>
-                    <span className="size-1.5 animate-pulse-soft rounded-full bg-amber" />
-                    保存中…
-                  </>
-                ) : (
-                  <>
-                    <span className="size-1.5 rounded-full bg-mint" />
-                    已保存
-                  </>
-                )}
+                {storageError
+                  ? '本地保存不可用'
+                  : saving
+                    ? '保存中…'
+                    : '已保存'}
               </motion.span>
             )}
           </AnimatePresence>
@@ -246,7 +235,7 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
             className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
             type="button"
             onClick={() => {
-              if (isSettings) onNavigate('workbench')
+              if (isSubPage) onNavigate('workbench')
               enterPresentation()
             }}
           >

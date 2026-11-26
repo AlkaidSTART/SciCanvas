@@ -372,7 +372,7 @@ export function createSessionApiMiddleware(store: SqliteSessionStore) {
 
 export interface SessionApiPluginOptions {
   dbPath?: string
-  store?: SqliteSessionStore
+  getStore?: () => SqliteSessionStore
 }
 
 /**
@@ -381,7 +381,7 @@ export interface SessionApiPluginOptions {
 export function sessionApiPlugin(options: SessionApiPluginOptions = {}): Plugin {
   let ownedStore: SqliteSessionStore | null = null
   const getStore = () => {
-    if (options.store) return options.store
+    if (options.getStore) return options.getStore()
     if (!ownedStore) {
       ownedStore = createSqliteSessionStore(options.dbPath || undefined)
     }

@@ -116,3 +116,18 @@ export function SettingsIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function ModelIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="4.2" y="4.2" width="7.6" height="7.6" rx="1.8" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="6.5" y="6.5" width="3" height="3" rx="0.6" fill="currentColor" />
+      <path
+        d="M6.2 2v2.2M9.8 2v2.2M6.2 11.8V14M9.8 11.8V14M2 6.2h2.2M2 9.8h2.2M11.8 6.2H14M11.8 9.8H14"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}

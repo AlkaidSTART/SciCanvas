@@ -150,4 +150,87 @@ describe('createSqliteSessionStore', () => {
       store2.close()
     }
   })
+
+  it('seeds preset LLM endpoints and persists custom endpoints, API keys, and formats in SQLite', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scicanvas-llm-sqlite-'))
+    tempDirs.push(dir)
+    const dbFile = join(dir, 'models.db')
+
+    const store1 = createSqliteSessionStore(dbFile)
+    const presets = store1.listLlmEndpoints()
+    expect(presets.length).toBeGreaterThanOrEqual(5)
+    expect(presets.map((p) => p.providerId)).toEqual(
+      expect.arrayContaining(['deepseek', 'doubao', 'qwen', 'openai', 'anthropic']),
+    )
+    expect(store1.getActiveLlmEndpoint()).toBeNull()
+
+    // 更新预设 DeepSeek 的 API Key 并激活
+    const updatedDeepseek = store1.upsertLlmEndpoint({
+      id: 'preset-deepseek',
+      name: 'DeepSeek',
+      providerId: 'deepseek',
+      isPreset: true,
+      isActive: true,
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'sk-deepseek-secret-1234',
+      model: 'deepseek-reasoner',
+      visionModel: '',
+      apiFormat: 'chat',
+    })
+    expect(updatedDeepseek.isActive).toBe(true)
+    expect(updatedDeepseek.apiKey).toBe('sk-deepseek-secret-1234')
+    expect(updatedDeepseek.model).toBe('deepseek-reasoner')
+
+    // 添加自定义端点（Anthropic 格式）并切换为激活状态
+    const custom = store1.upsertLlmEndpoint({
+      name: '我的 Claude 代理',
+      baseUrl: 'https://claude.proxy.example/v1',
+      apiKey: 'sk-ant-custom-9999',
+      model: 'claude-sonnet-4-20250514',
+      visionModel: 'claude-sonnet-4-20250514',
+      apiFormat: 'anthropic',
+      isActive: true,
+    })
+    expect(custom.isPreset).toBe(false)
+    expect(custom.isActive).toBe(true)
+    expect(custom.apiFormat).toBe('anthropic')
+    expect(store1.getLlmEndpoint('preset-deepseek')?.isActive).toBe(false)
+    expect(store1.getActiveLlmEndpoint()?.id).toBe(custom.id)
+    store1.close()
+
+    // 重新打开 SQLite 文件验证持久化
+    const store2 = createSqliteSessionStore(dbFile)
+    try {
+      const active = store2.getActiveLlmEndpoint()
+      expect(active?.id).toBe(custom.id)
+      expect(active?.apiKey).toBe('sk-ant-custom-9999')
+      expect(active?.apiFormat).toBe('anthropic')
+
+      const deepseek = store2.getLlmEndpoint('preset-deepseek')
+      expect(deepseek?.apiKey).toBe('sk-deepseek-secret-1234')
+      expect(deepseek?.model).toBe('deepseek-reasoner')
+
+      // 切换激活端点为豆包并修改为 response 格式
+      store2.upsertLlmEndpoint({
+        id: 'preset-doubao',
+        name: '豆包 (Doubao)',
+        providerId: 'doubao',
+        isPreset: true,
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        apiKey: 'ark-key-5678',
+        model: 'doubao-seed-1-6-250615',
+        apiFormat: 'response',
+      })
+      const activatedDoubao = store2.setActiveLlmEndpoint('preset-doubao')
+      expect(activatedDoubao?.isActive).toBe(true)
+      expect(activatedDoubao?.apiFormat).toBe('response')
+      expect(store2.getLlmEndpoint(custom.id)?.isActive).toBe(false)
+
+      // 删除自定义端点
+      expect(store2.deleteLlmEndpoint(custom.id)).toBe(true)
+      expect(store2.getLlmEndpoint(custom.id)).toBeNull()
+    } finally {
+      store2.close()
+    }
+  })
 })

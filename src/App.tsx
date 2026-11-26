@@ -3,6 +3,7 @@ import { MotionConfig } from 'motion/react'
 import { CanvasStage } from './components/CanvasStage'
 import { ControlBar } from './components/ControlBar'
 import { InspectorPanel } from './components/InspectorPanel'
+import { ModelConfigPage } from './components/ModelConfigPage'
 import { SettingsPage } from './components/SettingsPage'
 import { SidePanel } from './components/SidePanel'
 import { TopBar } from './components/TopBar'
@@ -12,6 +13,7 @@ import { useAutoHeal } from './hooks/useAutoHeal'
 import { useExperimentRuntime } from './hooks/useExperimentRuntime'
 import { useFloatingBallListener } from './hooks/useFloatingBallListener'
 import { useWorkspaceAutoSave } from './hooks/useWorkspaceAutoSave'
+import { useModelConfigStore } from './store/useModelConfigStore'
 import { useWorkbenchStore } from './store/useWorkbenchStore'
 import { useWorkspaceStore } from './store/useWorkspaceStore'
 import { useSessionStore } from './store/useSessionStore'
@@ -36,11 +38,14 @@ function App() {
   const toggleRightPanel = useWorkbenchStore((state) => state.toggleRightPanel)
   const hydrateWorkspace = useWorkspaceStore((state) => state.hydrate)
   const loadSessions = useSessionStore((state) => state.loadSessions)
+  const loadModelEndpoints = useModelConfigStore((state) => state.loadEndpoints)
   const runtime = useExperimentRuntime(canvasRef)
   const aiSandbox = useAISandbox(iframeRef)
   const usesSandbox = source === 'ai' && aiSpec?.renderType === 'canvas2d'
   const { route, navigate } = useAppRoute()
   const isSettings = route === 'settings'
+  const isModels = route === 'models'
+  const isSubPage = isSettings || isModels
   useAutoHeal()
   useWorkspaceAutoSave()
   useFloatingBallListener()
@@ -50,7 +55,8 @@ function App() {
   useEffect(() => {
     void hydrateWorkspace()
     void loadSessions()
-  }, [hydrateWorkspace, loadSessions])
+    void loadModelEndpoints()
+  }, [hydrateWorkspace, loadSessions, loadModelEndpoints])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -59,12 +65,12 @@ function App() {
         return
       }
 
-      if (event.key === 'Escape' && isSettings) {
+      if (event.key === 'Escape' && isSubPage) {
         navigate('workbench')
         return
       }
 
-      if (isSettings) return
+      if (isSubPage) return
 
       if (document.querySelector('[role="dialog"]')) return
 
@@ -105,11 +111,11 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [presentation, isSettings, navigate, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
+  }, [presentation, isSubPage, navigate, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
 
   const workspaceGridClass = presentation
     ? 'grid min-h-0 flex-1 grid-cols-1'
-    : isSettings
+    : isSubPage
       ? leftPanelOpen
         ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)] min-[1280px]:grid-cols-[264px_minmax(0,1fr)]'
         : 'grid min-h-0 flex-1 grid-cols-1'
@@ -128,9 +134,10 @@ function App() {
         <div className={workspaceGridClass}>
           <SidePanel route={route} onNavigate={navigate} />
           {isSettings && <SettingsPage onBack={() => navigate('workbench')} />}
+          {isModels && <ModelConfigPage onBack={() => navigate('workbench')} />}
           <main
-            className={isSettings ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
-            aria-hidden={isSettings || undefined}
+            className={isSubPage ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
+            aria-hidden={isSubPage || undefined}
           >
             <CanvasStage
               canvasRef={canvasRef}
@@ -143,7 +150,7 @@ function App() {
               onReset={activeControls.reset}
             />
           </main>
-          {!isSettings && <InspectorPanel />}
+          {!isSubPage && <InspectorPanel />}
         </div>
       </div>
     </MotionConfig>

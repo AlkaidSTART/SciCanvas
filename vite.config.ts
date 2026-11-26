@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
       standalonePlayerPlugin(),
       sessionApiPlugin({
         dbPath,
-        store: getSharedStore(),
+        getStore: getSharedStore,
       }),
       aiProxyPlugin({
         apiKey: env.AI_API_KEY,

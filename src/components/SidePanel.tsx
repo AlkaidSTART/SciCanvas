@@ -3,13 +3,12 @@ import type { FormEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { generateExperiment } from '../ai/client'
 import { MAX_PROMPT_LENGTH } from '../ai/prompt'
-import { EXPERIMENTS } from '../experiments'
 import type { AppRoute } from '../hooks/useAppRoute'
-import type { RuntimeStatus } from '../runtime/CanvasRuntime'
 import { useFloatingBallStore } from '../store/useFloatingBallStore'
+import { useModelConfigStore } from '../store/useModelConfigStore'
 import { useSessionStore } from '../store/useSessionStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
-import { SettingsIcon } from './icons'
+import { ModelIcon, SettingsIcon } from './icons'
 import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 import { PaperImageInput } from './PaperImageInput'
 import { WorkspaceDialog } from './WorkspaceDialog'
@@ -17,18 +16,6 @@ import { WorkspaceDialog } from './WorkspaceDialog'
 interface SidePanelProps {
   route: AppRoute
   onNavigate: (route: AppRoute) => void
-}
-
-const STATUS_LABEL: Record<RuntimeStatus, string> = {
-  running: '运行中',
-  paused: '已暂停',
-  error: '待恢复',
-}
-
-const DOT_STYLE: Record<RuntimeStatus, string> = {
-  running: 'bg-mint shadow-[0_0_0_3px_rgba(103,184,154,0.2)] animate-pulse-soft',
-  paused: 'bg-amber',
-  error: 'bg-danger',
 }
 
 const EXAMPLE_PROMPTS = [
@@ -56,23 +43,22 @@ const INSPIRATION_TAGS = [
 
 export function SidePanel({ route, onNavigate }: SidePanelProps) {
   const isSettings = route === 'settings'
-  const experiment = useWorkbenchStore((state) => state.experiment)
-  const status = useWorkbenchStore((state) => state.status)
+  const isModels = route === 'models'
+  const isSubPage = isSettings || isModels
+  const activeModelEndpoint = useModelConfigStore(
+    (state) => state.endpoints.find((item) => item.isActive) ?? null,
+  )
   const source = useWorkbenchStore((state) => state.source)
   const aiSpec = useWorkbenchStore((state) => state.aiSpec)
   const healStatus = useWorkbenchStore((state) => state.heal.status)
   const presentation = useWorkbenchStore((state) => state.presentation)
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
   const healing = healStatus === 'requesting' || healStatus === 'applied'
-  const selectExperiment = useWorkbenchStore((state) => state.selectExperiment)
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
-  const resetToDefault = useWorkbenchStore((state) => state.resetToDefault)
 
-  const [activeTab, setActiveTab] = useState<'presets' | 'ai'>('presets')
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const prompt = useFloatingBallStore((state) => state.promptDraft)
   const setPrompt = useFloatingBallStore((state) => state.setPromptDraft)
-  const floatingBallOpen = useFloatingBallStore((state) => state.floatingBallOpen)
   const [loading, setLoading] = useState(false)
   const [refineText, setRefineText] = useState('')
   const [refining, setRefining] = useState(false)
@@ -88,7 +74,6 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
     const unsubscribe = useFloatingBallStore.subscribe((state, prevState) => {
       if (state.promptFlashKey === prevState.promptFlashKey) return
       onNavigate('workbench')
-      setActiveTab('ai')
       setPromptHighlighted(true)
       if (rafId !== null) window.cancelAnimationFrame(rafId)
       rafId = window.requestAnimationFrame(() => {
@@ -267,151 +252,59 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
             : 'flex min-[960px]:hidden'
       } min-h-0 flex-col overflow-hidden border-r border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] max-[959px]:flex-row max-[959px]:items-stretch max-[959px]:gap-3.5 max-[959px]:overflow-x-auto max-[959px]:overflow-y-hidden max-[959px]:border-b max-[959px]:border-r-0 max-[959px]:px-3 max-[959px]:py-2.5`}
       aria-hidden={presentation || undefined}
-      aria-label="实验导航与 AI 沙盒"
+      aria-label="工作区与 AI 沙盒"
     >
       <div
-        className="hidden h-[36px] flex-none items-center gap-1 border-b border-line px-2 min-[960px]:flex"
+        className="flex h-[36px] flex-none items-center gap-1 border-b border-line px-2"
         role="tablist"
         aria-label="左侧栏切换"
       >
+        <motion.button
+          whileTap={TAP_BUTTON}
+          className={`relative flex flex-1 items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+            workspaceOpen
+              ? 'text-ink'
+              : 'text-ink-faint hover:bg-surface/60 hover:text-ink-dim'
+          }`}
+          type="button"
+          onClick={() => setWorkspaceOpen(true)}
+          title="打开工作区记录、会话与模型配置"
+        >
+          {workspaceOpen && (
+            <motion.span
+              layoutId="sidepanel-tab-pill"
+              transition={SPRING_SNAPPY}
+              className="absolute inset-0 rounded-[7px] bg-surface shadow-[0_1px_2px_rgba(58,51,43,0.08)]"
+            />
+          )}
+          <span className="relative z-[1]">工作区</span>
+        </motion.button>
         <button
-          className={`relative flex flex-1 items-center justify-center gap-1 rounded-[7px] px-1.5 py-1 text-[11px] font-medium transition-colors ${
-            !isSettings && activeTab === 'presets'
+          className={`relative flex flex-1 items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+            !isSubPage && !workspaceOpen
               ? 'text-ink'
               : 'text-ink-faint hover:text-ink-dim'
           }`}
           type="button"
           role="tab"
-          aria-selected={!isSettings && activeTab === 'presets'}
+          aria-selected={!isSubPage && !workspaceOpen}
           onClick={() => {
-            if (isSettings) onNavigate('workbench')
-            setActiveTab('presets')
+            if (isSubPage) onNavigate('workbench')
           }}
         >
-          {!isSettings && activeTab === 'presets' && (
+          {!isSubPage && !workspaceOpen && (
             <motion.span
               layoutId="sidepanel-tab-pill"
               transition={SPRING_SNAPPY}
               className="absolute inset-0 rounded-[7px] bg-surface shadow-[0_1px_2px_rgba(58,51,43,0.08)]"
             />
-          )}
-          <span className="relative z-[1]">预设实验</span>
-          <span className="relative z-[1] rounded-[4px] bg-ink-dim/10 px-1 py-px font-mono text-[9px] text-ink-dim">
-            {EXPERIMENTS.length}
-          </span>
-        </button>
-        <button
-          className={`relative flex flex-1 items-center justify-center gap-1 rounded-[7px] px-1.5 py-1 text-[11px] font-medium transition-colors ${
-            !isSettings && activeTab === 'ai' ? 'text-ink' : 'text-ink-faint hover:text-ink-dim'
-          }`}
-          type="button"
-          role="tab"
-          aria-selected={!isSettings && activeTab === 'ai'}
-          onClick={() => {
-            if (isSettings) onNavigate('workbench')
-            setActiveTab('ai')
-          }}
-        >
-          {!isSettings && activeTab === 'ai' && (
-            <motion.span
-              layoutId="sidepanel-tab-pill"
-              transition={SPRING_SNAPPY}
-              className="absolute inset-0 rounded-[7px] bg-surface shadow-[0_1px_2px_rgba(58,51,43,0.08)]"
-            />
-          )}
-          {source === 'ai' && (
-            <span className="relative z-[1] size-1.5 rounded-full bg-[#8a76a8]" />
           )}
           <span className="relative z-[1]">AI 沙盒</span>
         </button>
-        <motion.button
-          whileTap={TAP_BUTTON}
-          className={`flex flex-none items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            workspaceOpen
-              ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
-              : 'text-ink-faint hover:bg-surface/60 hover:text-ink-dim'
-          }`}
-          type="button"
-          onClick={() => setWorkspaceOpen(true)}
-          title="打开工作区记录与模型配置"
-        >
-          工作区
-        </motion.button>
       </div>
 
-      <div className="workbench-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-3 max-[959px]:flex-row max-[959px]:overflow-visible max-[959px]:p-0">
-        <section
-          className={`flex flex-col gap-2 max-[959px]:min-w-[230px] max-[959px]:flex-none ${
-            activeTab === 'presets' ? '' : 'min-[960px]:hidden'
-          }`}
-        >
-          <h2 className="m-0 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.13em] text-ink-faint min-[960px]:hidden">
-            预设实验
-            <span className="rounded-[5px] border border-line bg-ink-dim/10 px-1.5 py-0.5 font-mono text-[9px] normal-case tracking-normal text-ink-dim">
-              {EXPERIMENTS.length} 例
-            </span>
-          </h2>
-          <div className="flex flex-col gap-1.5 max-[959px]:flex-row max-[959px]:gap-2">
-            {EXPERIMENTS.map((preset, index) => {
-              const active = source === 'preset' && preset.id === experiment.id
-              return (
-                <motion.button
-                  key={preset.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ ...FAST_TRANSITION, delay: index * 0.03 }}
-                  whileHover={{ x: 2 }}
-                  whileTap={{ scale: 0.985 }}
-                  className={`relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] border px-2.5 py-2 text-left transition-colors max-[959px]:w-auto max-[959px]:min-w-[182px] max-[959px]:flex-none ${
-                    active
-                      ? 'border-[rgba(224,162,121,0.42)] shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
-                      : 'border-line bg-surface/55 hover:border-line-strong hover:bg-surface-soft'
-                  }`}
-                  type="button"
-                  onClick={() => {
-                    if (isSettings) onNavigate('workbench')
-                    selectExperiment(preset.id)
-                  }}
-                  aria-current={active ? 'true' : undefined}
-                  title={preset.insight}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="preset-active-bg"
-                      transition={SPRING_SNAPPY}
-                      className="pointer-events-none absolute inset-0 rounded-[8px] bg-[linear-gradient(135deg,rgba(240,205,178,0.42),rgba(240,205,178,0.12))]"
-                    />
-                  )}
-                  <span
-                    className={`relative z-[1] size-[7px] flex-none rounded-full ${
-                      active ? DOT_STYLE[status] : 'bg-[rgba(120,100,78,0.25)]'
-                    }`}
-                  />
-                  <span className="relative z-[1] flex min-w-0 flex-1 flex-col gap-[2px]">
-                    <strong className="truncate text-[12px] font-[550] leading-[1.35] text-ink">
-                      {preset.title}
-                    </strong>
-                    <small className="truncate text-[10px] text-ink-faint">{preset.domain}</small>
-                  </span>
-                  {active && (
-                    <span className="relative z-[1] whitespace-nowrap font-mono text-[9px] text-accent-strong">
-                      {STATUS_LABEL[status]}
-                    </span>
-                  )}
-                </motion.button>
-              )
-            })}
-          </div>
-          <p className="m-0 pt-1 text-[10px] leading-[1.55] text-ink-faint max-[959px]:hidden">
-            全部案例本地运行，切换时按默认参数重新初始化。
-          </p>
-        </section>
-
-        <section
-          className={`flex flex-col gap-2.5 max-[959px]:hidden ${
-            activeTab === 'ai' ? '' : 'min-[960px]:hidden'
-          }`}
-        >
+      <div className="workbench-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-3 max-[959px]:hidden">
+        <section className="flex flex-col gap-2.5">
           <AnimatePresence>
             {source === 'ai' && aiSpec && (
               <motion.div
@@ -431,7 +324,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
             )}
           </AnimatePresence>
 
-          <PaperImageInput onImageLoaded={() => setActiveTab('ai')} />
+          <PaperImageInput onImageLoaded={() => onNavigate('workbench')} />
 
           <form className="flex flex-col gap-2" onSubmit={handleSubmit}>
             <textarea
@@ -480,7 +373,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
               >
                 {loading ? '生成中…' : '生成实验'}
               </motion.button>
-              {loading ? (
+              {loading && (
                 <motion.button
                   whileTap={TAP_BUTTON}
                   className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
@@ -489,17 +382,6 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
                 >
                   取消
                 </motion.button>
-              ) : (
-                source === 'ai' && (
-                  <motion.button
-                    whileTap={TAP_BUTTON}
-                    className="whitespace-nowrap rounded-lg border border-line bg-surface px-2.5 py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
-                    type="button"
-                    onClick={resetToDefault}
-                  >
-                    回到预设
-                  </motion.button>
-                )
               )}
             </div>
           </form>
@@ -600,7 +482,35 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
         </section>
       </div>
 
-      <div className="flex flex-none items-center border-t border-line px-2 py-2 max-[959px]:border-l max-[959px]:border-t-0 max-[959px]:py-0 max-[959px]:pl-2.5">
+      <div className="flex flex-none flex-col gap-1 border-t border-line px-2 py-2 max-[959px]:flex-row max-[959px]:items-center max-[959px]:border-l max-[959px]:border-t-0 max-[959px]:py-0 max-[959px]:pl-2.5">
+        <motion.button
+          whileTap={TAP_BUTTON}
+          type="button"
+          onClick={() => onNavigate(isModels ? 'workbench' : 'models')}
+          aria-current={isModels ? 'page' : undefined}
+          title={isModels ? '返回工作台' : '打开大模型配置 (/models)'}
+          className={`flex w-full items-center justify-between gap-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
+            isModels
+              ? 'border-accent-line bg-accent-soft text-accent-strong shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
+              : 'border-transparent bg-transparent text-ink-dim hover:border-line hover:bg-surface/80 hover:text-ink'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <ModelIcon className="size-3.5 flex-none" />
+            <span>模型配置</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            {activeModelEndpoint && activeModelEndpoint.apiKey.trim().length > 0 && (
+              <span
+                className="size-1.5 rounded-full bg-mint shadow-[0_0_0_2px_rgba(127,175,148,0.28)]"
+                title={`当前模型：${activeModelEndpoint.name}`}
+              />
+            )}
+            <span className="hidden font-mono text-[9px] text-ink-faint min-[960px]:inline">
+              /models
+            </span>
+          </span>
+        </motion.button>
         <motion.button
           whileTap={TAP_BUTTON}
           type="button"
@@ -617,31 +527,10 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
             <SettingsIcon className="size-3.5 flex-none" />
             <span>设置</span>
           </span>
-          <span className="flex items-center gap-1.5">
-            {floatingBallOpen && (
-              <span
-                className="size-1.5 rounded-full bg-mint shadow-[0_0_0_2px_rgba(127,175,148,0.28)]"
-                title="悬浮球已开启"
-              />
-            )}
-            <span className="hidden font-mono text-[9px] text-ink-faint min-[960px]:inline">
-              /settings
-            </span>
+          <span className="hidden font-mono text-[9px] text-ink-faint min-[960px]:inline">
+            /settings
           </span>
         </motion.button>
-      </div>
-
-      <div className="hidden h-[34px] flex-none items-center gap-2 border-t border-line px-3 text-[10px] text-ink-faint min-[960px]:flex">
-        <span
-          className={`size-1.5 flex-none rounded-full ${
-            source === 'ai'
-              ? 'bg-[#8a76a8]'
-              : 'bg-mint shadow-[0_0_0_3px_rgba(103,184,154,0.18)]'
-          }`}
-        />
-        <span className="truncate">
-          {source === 'ai' ? 'AI 隔离沙盒 · 无网络权限' : '本地内置实验 · 无需登录 / API'}
-        </span>
       </div>
 
       <AnimatePresence>
