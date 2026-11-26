@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { generateExperiment } from '../ai/client'
 import { MAX_PROMPT_LENGTH } from '../ai/prompt'
+import { DEFAULT_EXPERIMENT } from '../experiments'
 import type { AppRoute } from '../hooks/useAppRoute'
 import { useFloatingBallStore } from '../store/useFloatingBallStore'
 import { useModelConfigStore } from '../store/useModelConfigStore'
 import { useSessionStore } from '../store/useSessionStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
-import { ModelIcon, SettingsIcon } from './icons'
+import { useWorkspaceStore } from '../store/useWorkspaceStore'
+import { createExperimentGroupId, resolveRecordGroupId } from '../workspace/records'
+import { openDrawingWindow } from '../workspace/windowActions'
+import { ModelIcon, PlusIcon, SettingsIcon } from './icons'
 import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 import { PaperImageInput } from './PaperImageInput'
-import { WorkspaceDialog } from './WorkspaceDialog'
 
 interface SidePanelProps {
   route: AppRoute
@@ -42,21 +45,31 @@ const INSPIRATION_TAGS = [
 ]
 
 export function SidePanel({ route, onNavigate }: SidePanelProps) {
+  const isWorkspace = route === 'workspace'
   const isSettings = route === 'settings'
   const isModels = route === 'models'
-  const isSubPage = isSettings || isModels
+  const isSubPage = isWorkspace || isSettings || isModels
   const activeModelEndpoint = useModelConfigStore(
     (state) => state.endpoints.find((item) => item.isActive) ?? null,
   )
   const source = useWorkbenchStore((state) => state.source)
+  const experimentId = useWorkbenchStore((state) => state.experiment.id)
+  const experimentTitle = useWorkbenchStore((state) => state.experiment.title)
   const aiSpec = useWorkbenchStore((state) => state.aiSpec)
+  const workspaceRecordId = useWorkbenchStore((state) => state.workspaceRecordId)
+  const activeGroupId = useWorkbenchStore((state) => state.activeGroupId)
+  const activeGroupTitle = useWorkbenchStore((state) => state.activeGroupTitle)
   const healStatus = useWorkbenchStore((state) => state.heal.status)
   const presentation = useWorkbenchStore((state) => state.presentation)
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
   const healing = healStatus === 'requesting' || healStatus === 'applied'
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
 
-  const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const entries = useWorkspaceStore((state) => state.entries)
+  const createPresetWindow = useWorkspaceStore((state) => state.createPresetWindow)
+
+  /** 默认情况下每次绘图新开独立实验窗口；也可切换为归入当前实验组新开窗口。 */
+  const [spawnMode, setSpawnMode] = useState<'new-experiment' | 'same-experiment'>('new-experiment')
   const prompt = useFloatingBallStore((state) => state.promptDraft)
   const setPrompt = useFloatingBallStore((state) => state.setPromptDraft)
   const [loading, setLoading] = useState(false)
@@ -67,6 +80,18 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
   const promptInputRef = useRef<HTMLTextAreaElement>(null)
   const controllerRef = useRef<AbortController | null>(null)
   const refineControllerRef = useRef<AbortController | null>(null)
+
+  const resolvedGroupId = activeGroupId ?? `preset:${experimentId}`
+  const resolvedGroupTitle = activeGroupTitle ?? experimentTitle
+
+  const siblingWindows = useMemo(
+    () =>
+      entries.filter(
+        (entry) =>
+          entry.status !== 'unsupported' && resolveRecordGroupId(entry) === resolvedGroupId,
+      ),
+    [entries, resolvedGroupId],
+  )
 
   useEffect(() => {
     let timer: number | null = null
@@ -128,7 +153,21 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
     })
     try {
       const spec = await generateExperiment(text, { signal: controller.signal })
-      applyGeneratedExperiment(spec, undefined, { newRecord: true })
+      const current = useWorkbenchStore.getState()
+      const targetGroupId =
+        spawnMode === 'same-experiment'
+          ? (current.activeGroupId ?? createExperimentGroupId())
+          : createExperimentGroupId()
+      const targetGroupTitle =
+        spawnMode === 'same-experiment'
+          ? (current.activeGroupTitle ?? current.experiment.title)
+          : spec.title
+      applyGeneratedExperiment(spec, undefined, {
+        newRecord: true,
+        groupId: targetGroupId,
+        groupTitle: targetGroupTitle,
+      })
+      onNavigate('workbench')
       if (sessionId) {
         void useSessionStore.getState().recordGeneration(sessionId, {
           mode: 'create',
@@ -165,8 +204,9 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
 
   /**
    * 增量修改：只发送当前 Schema、当前参数与本次指令。失败时不替换当前实验。
+   * 支持「更新当前窗口」或「同实验新开窗口微调」（保留原窗口便于对比）。
    */
-  const handleRefine = async (instruction: string) => {
+  const handleRefine = async (instruction: string, options?: { openInNewWindow?: boolean }) => {
     const current = useWorkbenchStore.getState()
     if (refining || loading || healing || current.source !== 'ai' || !current.aiSpec) return
     const text = instruction.trim()
@@ -180,12 +220,12 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
     setRefining(true)
     setAiError(null)
     const sessionStore = useSessionStore.getState()
-    let sessionId = sessionStore.activeSessionId
+    let sessionId = options?.openInNewWindow ? null : sessionStore.activeSessionId
     if (!sessionId) {
       sessionId = await sessionStore.startSession({
         title: current.aiSpec.title,
         source: 'text',
-        workspaceRecordId: current.workspaceRecordId,
+        workspaceRecordId: options?.openInNewWindow ? null : current.workspaceRecordId,
         initialPrompt: text,
         initialMode: 'refine',
       })
@@ -207,7 +247,17 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
         },
         { signal: controller.signal },
       )
-      applyGeneratedExperiment(spec)
+      if (options?.openInNewWindow) {
+        const targetGroupId = current.activeGroupId ?? createExperimentGroupId()
+        const targetGroupTitle = current.activeGroupTitle ?? current.aiSpec.title
+        applyGeneratedExperiment(spec, undefined, {
+          newRecord: true,
+          groupId: targetGroupId,
+          groupTitle: targetGroupTitle,
+        })
+      } else {
+        applyGeneratedExperiment(spec)
+      }
       setRefineText('')
       if (sessionId) {
         void useSessionStore.getState().recordGeneration(sessionId, {
@@ -215,7 +265,9 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           prompt: text,
           spec,
           params: useWorkbenchStore.getState().params,
-          assistantSummary: `已微调更新「${spec.title}」`,
+          assistantSummary: options?.openInNewWindow
+            ? `已在新窗口微调生成「${spec.title}」`
+            : `已微调更新「${spec.title}」`,
         })
       }
     } catch (error) {
@@ -242,6 +294,19 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
     void handleRefine(refineText)
   }
 
+  const handleAddWindowInCurrentExperiment = async () => {
+    const created = await createPresetWindow(
+      source === 'preset' ? experimentId : DEFAULT_EXPERIMENT.id,
+      {
+        groupId: resolvedGroupId,
+        groupTitle: resolvedGroupTitle,
+      },
+    )
+    if (!created) return
+    openDrawingWindow(created)
+    onNavigate('workbench')
+  }
+
   return (
     <aside
       className={`preset-scroll ${
@@ -261,16 +326,18 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
       >
         <motion.button
           whileTap={TAP_BUTTON}
-          className={`relative flex flex-1 items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            workspaceOpen
+          className={`relative flex flex-1 items-center justify-center gap-1 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+            isWorkspace
               ? 'text-ink'
               : 'text-ink-faint hover:bg-surface/60 hover:text-ink-dim'
           }`}
           type="button"
-          onClick={() => setWorkspaceOpen(true)}
-          title="打开工作区记录、会话与模型配置"
+          role="tab"
+          aria-selected={isWorkspace}
+          onClick={() => onNavigate('workspace')}
+          title="打开科研工作区，统一管理全部实验与绘画窗口 (/workspace)"
         >
-          {workspaceOpen && (
+          {isWorkspace && (
             <motion.span
               layoutId="sidepanel-tab-pill"
               transition={SPRING_SNAPPY}
@@ -278,21 +345,26 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
             />
           )}
           <span className="relative z-[1]">工作区</span>
+          {entries.length > 0 && (
+            <span className="relative z-[1] rounded-[4px] border border-line bg-surface-soft px-1 py-px font-mono text-[8.5px] text-ink-faint">
+              {entries.length}
+            </span>
+          )}
         </motion.button>
         <button
           className={`relative flex flex-1 items-center justify-center rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            !isSubPage && !workspaceOpen
+            !isSubPage
               ? 'text-ink'
               : 'text-ink-faint hover:text-ink-dim'
           }`}
           type="button"
           role="tab"
-          aria-selected={!isSubPage && !workspaceOpen}
+          aria-selected={!isSubPage}
           onClick={() => {
             if (isSubPage) onNavigate('workbench')
           }}
         >
-          {!isSubPage && !workspaceOpen && (
+          {!isSubPage && (
             <motion.span
               layoutId="sidepanel-tab-pill"
               transition={SPRING_SNAPPY}
@@ -305,28 +377,94 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
 
       <div className="workbench-scroll flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-3 max-[959px]:hidden">
         <section className="flex flex-col gap-2.5">
-          <AnimatePresence>
-            {source === 'ai' && aiSpec && (
-              <motion.div
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={FAST_TRANSITION}
-                className="flex flex-col gap-1 rounded-[9px] border border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.09)] px-2.5 py-2"
+          {/* 当前实验与同实验绘画窗口列表（Codex / Claude 风格） */}
+          <div className="flex flex-col gap-1.5 rounded-[10px] border border-line bg-surface/75 p-2.5">
+            <div className="flex items-center justify-between gap-1.5">
+              <div className="flex min-w-0 flex-col">
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-ink-faint">
+                  当前实验 · {Math.max(siblingWindows.length, 1)} 窗口
+                </span>
+                <span className="truncate text-[11.5px] font-[600] text-ink" title={resolvedGroupTitle}>
+                  {resolvedGroupTitle}
+                </span>
+              </div>
+              <motion.button
+                whileTap={TAP_BUTTON}
+                type="button"
+                className="flex flex-none items-center gap-0.5 rounded-[6px] border border-line bg-surface-soft px-1.5 py-1 text-[9.5px] font-medium text-ink-dim transition-colors hover:border-line-strong hover:bg-surface hover:text-ink"
+                title="在当前实验内新增一个绘画窗口"
+                onClick={() => void handleAddWindowInCurrentExperiment()}
               >
-                <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#6d5a7d]">
-                  当前为 AI 实验
-                </span>
-                <span className="truncate text-[11.5px] text-ink" title={aiSpec.title}>
-                  {aiSpec.title}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <PlusIcon className="size-2.5" />
+                <span>新窗</span>
+              </motion.button>
+            </div>
 
-          <PaperImageInput onImageLoaded={() => onNavigate('workbench')} />
+            {siblingWindows.length > 0 && (
+              <div className="flex max-h-[116px] flex-col gap-1 overflow-y-auto pr-0.5">
+                {siblingWindows.map((win) => {
+                  const active = win.id === workspaceRecordId
+                  return (
+                    <button
+                      key={win.id}
+                      type="button"
+                      onClick={() => {
+                        openDrawingWindow(win)
+                        onNavigate('workbench')
+                      }}
+                      className={`flex items-center gap-1.5 rounded-[6px] border px-2 py-1 text-left text-[10.5px] transition-colors ${
+                        active
+                          ? 'border-accent-line bg-accent-soft/65 font-medium text-ink'
+                          : 'border-transparent bg-transparent text-ink-dim hover:border-line hover:bg-surface-soft/80 hover:text-ink'
+                      }`}
+                    >
+                      <span
+                        className={`size-1.5 flex-none rounded-full ${
+                          win.source === 'ai'
+                            ? 'bg-[#8a76a8]'
+                            : active
+                              ? 'bg-accent-strong'
+                              : 'bg-ink-faint/60'
+                        }`}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{win.title}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <PaperImageInput
+            spawnMode={spawnMode}
+            onImageLoaded={() => onNavigate('workbench')}
+          />
 
           <form className="flex flex-col gap-2" onSubmit={handleSubmit}>
+            <div className="flex items-center justify-between gap-1.5">
+              <span className="text-[9.5px] text-ink-faint">新绘图方式</span>
+              <div className="flex items-center gap-0.5 rounded-[7px] border border-line bg-surface-soft/80 p-0.5">
+                {(
+                  [
+                    ['new-experiment', '新开独立窗口'],
+                    ['same-experiment', '当前实验内新开'],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSpawnMode(mode)}
+                    className={`rounded-[5px] px-1.5 py-[2px] text-[9px] transition-colors ${
+                      spawnMode === mode
+                        ? 'bg-surface font-medium text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
+                        : 'text-ink-faint hover:text-ink-dim'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <textarea
               ref={promptInputRef}
               className={`resize-none rounded-[9px] border bg-surface-soft px-2.5 py-2 text-[11.5px] leading-[1.55] text-ink placeholder:text-ink-faint transition-shadow focus:border-accent-line focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
@@ -448,15 +586,27 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
                     placeholder="例如：把噪声强度做成可调滑块；用虚线对比理想轨迹…"
                     aria-label="实验修改指令"
                   />
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <motion.button
                       whileTap={refining || loading || healing ? undefined : TAP_BUTTON}
-                      className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
+                      className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-2.5 py-[6px] text-[10.5px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
                       type="submit"
                       disabled={refining || loading || healing}
                     >
-                      {refining ? '应用中…' : '应用修改'}
+                      {refining ? '应用中…' : '更新当前窗'}
                     </motion.button>
+                    {!refining && (
+                      <motion.button
+                        whileTap={loading || healing ? undefined : TAP_BUTTON}
+                        className="rounded-lg border border-[rgba(138,118,168,0.4)] bg-surface px-2 py-[6px] text-[10.5px] font-medium text-[#6d5a7d] transition-colors enabled:hover:bg-[rgba(138,118,168,0.1)] disabled:cursor-not-allowed disabled:opacity-45"
+                        type="button"
+                        disabled={loading || healing}
+                        title="在当前实验内新开一个绘画窗口并应用修改，原窗口保持不变"
+                        onClick={() => void handleRefine(refineText, { openInNewWindow: true })}
+                      >
+                        新窗微调
+                      </motion.button>
+                    )}
                     {refining && (
                       <motion.button
                         whileTap={TAP_BUTTON}
@@ -532,10 +682,6 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           </span>
         </motion.button>
       </div>
-
-      <AnimatePresence>
-        {workspaceOpen && <WorkspaceDialog onClose={() => setWorkspaceOpen(false)} />}
-      </AnimatePresence>
     </aside>
   )
 }

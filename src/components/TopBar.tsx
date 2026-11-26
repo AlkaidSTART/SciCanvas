@@ -28,6 +28,7 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
   const isSubPage = route !== 'workbench'
   const title = useWorkbenchStore((state) => state.experiment.title)
   const domain = useWorkbenchStore((state) => state.experiment.domain)
+  const activeGroupTitle = useWorkbenchStore((state) => state.activeGroupTitle)
   const presentation = useWorkbenchStore((state) => state.presentation)
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
@@ -203,6 +204,14 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
                 {domain}
               </span>
               <span className="hidden text-line-strong min-[1040px]:inline">/</span>
+              {activeGroupTitle && activeGroupTitle !== title && (
+                <>
+                  <span className="hidden max-w-[14vw] truncate text-[11.5px] text-ink-faint min-[1140px]:inline">
+                    {activeGroupTitle}
+                  </span>
+                  <span className="hidden text-line-strong min-[1140px]:inline">·</span>
+                </>
+              )}
               <span className="min-w-0 max-w-[34vw] truncate text-[12.5px] font-medium text-ink max-[640px]:max-w-[46vw] max-[640px]:text-xs">
                 {title}
               </span>

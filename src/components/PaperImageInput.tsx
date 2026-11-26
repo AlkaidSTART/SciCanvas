@@ -14,6 +14,7 @@ import { useFloatingBallStore } from '../store/useFloatingBallStore'
 import { useSessionStore } from '../store/useSessionStore'
 import { AnimatePresence, motion } from 'motion/react'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import { createExperimentGroupId } from '../workspace/records'
 import { FAST_TRANSITION, TAP_BUTTON } from './motion'
 
 interface LoadedImage {
@@ -33,13 +34,17 @@ const fieldClass =
 
 interface PaperImageInputProps {
   onImageLoaded?: () => void
+  spawnMode?: 'new-experiment' | 'same-experiment'
 }
 
 /**
  * 论文截图输入 → 多模态识别 → 用户确认编辑 → 复用 M3 文本生成。
  * 所有失败都停留在当前步骤，不替换画布上已有的实验。
  */
-export function PaperImageInput({ onImageLoaded }: PaperImageInputProps = {}) {
+export function PaperImageInput({
+  onImageLoaded,
+  spawnMode = 'new-experiment',
+}: PaperImageInputProps = {}) {
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
   const presentation = useWorkbenchStore((state) => state.presentation)
 
@@ -199,7 +204,20 @@ export function PaperImageInput({ onImageLoaded }: PaperImageInputProps = {}) {
     })
     try {
       const spec = await generateExperiment(prompt, { signal: controller.signal })
-      applyGeneratedExperiment(spec, undefined, { newRecord: true })
+      const current = useWorkbenchStore.getState()
+      const targetGroupId =
+        spawnMode === 'same-experiment'
+          ? (current.activeGroupId ?? createExperimentGroupId())
+          : createExperimentGroupId()
+      const targetGroupTitle =
+        spawnMode === 'same-experiment'
+          ? (current.activeGroupTitle ?? current.experiment.title)
+          : spec.title
+      applyGeneratedExperiment(spec, undefined, {
+        newRecord: true,
+        groupId: targetGroupId,
+        groupTitle: targetGroupTitle,
+      })
       if (sessionId) {
         void useSessionStore.getState().recordGeneration(sessionId, {
           mode: 'create',

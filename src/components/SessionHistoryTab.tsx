@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import type { SessionMessage, StoredGeneration } from '../sessions/types'
 import { useSessionStore } from '../store/useSessionStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import { createExperimentGroupId } from '../workspace/records'
 import { FAST_TRANSITION } from './motion'
 
 interface SessionHistoryTabProps {
@@ -71,10 +72,12 @@ export function SessionHistoryTab({ onClose }: SessionHistoryTabProps) {
 
   const handleApplyGeneration = (generation: StoredGeneration) => {
     const workbench = useWorkbenchStore.getState()
+    setActiveSessionId(generation.sessionId)
     workbench.applyGeneratedExperiment(generation.spec, generation.params ?? undefined, {
       newRecord: true,
+      groupId: createExperimentGroupId(),
+      groupTitle: generation.title,
     })
-    setActiveSessionId(generation.sessionId)
     onClose()
   }
 

@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 
-export type AppRoute = 'workbench' | 'settings' | 'models'
+export type AppRoute = 'workbench' | 'workspace' | 'settings' | 'models'
 
 const ROUTE_CHANGE_EVENT = 'scicanvas:route-change'
 
 /**
- * 从 URL pathname / hash 解析当前页面路由，同时兼容 Web 开发模式（/settings、/models）与 Tauri 打包环境（#/settings、#/models）。
+ * 从 URL pathname / hash 解析当前页面路由，同时兼容 Web 开发模式（/workspace、/settings、/models）与 Tauri 打包环境（#/workspace、#/settings、#/models）。
  */
 export function parseAppRoute(pathname: string, hash: string): AppRoute {
   const normalizedPath = pathname.replace(/\/+$/, '') || '/'
   const normalizedHash = hash.replace(/^#/, '').replace(/\/+$/, '')
 
+  if (normalizedPath === '/workspace' || normalizedHash === '/workspace') {
+    return 'workspace'
+  }
   if (normalizedPath === '/settings' || normalizedHash === '/settings') {
     return 'settings'
   }
@@ -33,6 +36,7 @@ function shouldUseHashRouting(): boolean {
 }
 
 function routeToPath(route: AppRoute): string {
+  if (route === 'workspace') return '/workspace'
   if (route === 'settings') return '/settings'
   if (route === 'models') return '/models'
   return '/'

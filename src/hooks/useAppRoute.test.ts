@@ -19,6 +19,13 @@ describe('parseAppRoute', () => {
     expect(parseAppRoute('/', '#/models/')).toBe('models')
   })
 
+  it('resolves /workspace and hash #/workspace to workspace', () => {
+    expect(parseAppRoute('/workspace', '')).toBe('workspace')
+    expect(parseAppRoute('/workspace/', '')).toBe('workspace')
+    expect(parseAppRoute('/index.html', '#/workspace')).toBe('workspace')
+    expect(parseAppRoute('/', '#/workspace/')).toBe('workspace')
+  })
+
   it('defaults other routes to workbench', () => {
     expect(parseAppRoute('/', '')).toBe('workbench')
     expect(parseAppRoute('/index.html', '')).toBe('workbench')
