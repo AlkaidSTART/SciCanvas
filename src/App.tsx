@@ -3,15 +3,18 @@ import { MotionConfig } from 'motion/react'
 import { CanvasStage } from './components/CanvasStage'
 import { ControlBar } from './components/ControlBar'
 import { InspectorPanel } from './components/InspectorPanel'
+import { SettingsPage } from './components/SettingsPage'
 import { SidePanel } from './components/SidePanel'
 import { TopBar } from './components/TopBar'
 import { useAISandbox } from './hooks/useAISandbox'
+import { useAppRoute } from './hooks/useAppRoute'
 import { useAutoHeal } from './hooks/useAutoHeal'
 import { useExperimentRuntime } from './hooks/useExperimentRuntime'
 import { useFloatingBallListener } from './hooks/useFloatingBallListener'
 import { useWorkspaceAutoSave } from './hooks/useWorkspaceAutoSave'
 import { useWorkbenchStore } from './store/useWorkbenchStore'
 import { useWorkspaceStore } from './store/useWorkspaceStore'
+import { useSessionStore } from './store/useSessionStore'
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -24,6 +27,7 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const source = useWorkbenchStore((state) => state.source)
+  const aiSpec = useWorkbenchStore((state) => state.aiSpec)
   const presentation = useWorkbenchStore((state) => state.presentation)
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
@@ -31,18 +35,22 @@ function App() {
   const toggleLeftPanel = useWorkbenchStore((state) => state.toggleLeftPanel)
   const toggleRightPanel = useWorkbenchStore((state) => state.toggleRightPanel)
   const hydrateWorkspace = useWorkspaceStore((state) => state.hydrate)
+  const loadSessions = useSessionStore((state) => state.loadSessions)
   const runtime = useExperimentRuntime(canvasRef)
   const aiSandbox = useAISandbox(iframeRef)
-  const isAi = source === 'ai'
+  const usesSandbox = source === 'ai' && aiSpec?.renderType === 'canvas2d'
+  const { route, navigate } = useAppRoute()
+  const isSettings = route === 'settings'
   useAutoHeal()
   useWorkspaceAutoSave()
   useFloatingBallListener()
 
-  const activeControls = isAi ? aiSandbox : runtime
+  const activeControls = usesSandbox ? aiSandbox : runtime
 
   useEffect(() => {
     void hydrateWorkspace()
-  }, [hydrateWorkspace])
+    void loadSessions()
+  }, [hydrateWorkspace, loadSessions])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -50,6 +58,13 @@ function App() {
         exitPresentation()
         return
       }
+
+      if (event.key === 'Escape' && isSettings) {
+        navigate('workbench')
+        return
+      }
+
+      if (isSettings) return
 
       if (document.querySelector('[role="dialog"]')) return
 
@@ -90,25 +105,33 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [presentation, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
+  }, [presentation, isSettings, navigate, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
 
   const workspaceGridClass = presentation
     ? 'grid min-h-0 flex-1 grid-cols-1'
-    : leftPanelOpen && rightPanelOpen
-      ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)_276px] min-[1280px]:grid-cols-[264px_minmax(0,1fr)_296px]'
-      : leftPanelOpen
+    : isSettings
+      ? leftPanelOpen
         ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)] min-[1280px]:grid-cols-[264px_minmax(0,1fr)]'
-        : rightPanelOpen
-          ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[minmax(0,1fr)_276px] min-[1280px]:grid-cols-[minmax(0,1fr)_296px]'
-          : 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-1'
+        : 'grid min-h-0 flex-1 grid-cols-1'
+      : leftPanelOpen && rightPanelOpen
+        ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)_276px] min-[1280px]:grid-cols-[264px_minmax(0,1fr)_296px]'
+        : leftPanelOpen
+          ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)] min-[1280px]:grid-cols-[264px_minmax(0,1fr)]'
+          : rightPanelOpen
+            ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[minmax(0,1fr)_276px] min-[1280px]:grid-cols-[minmax(0,1fr)_296px]'
+            : 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-1'
 
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex h-svh w-full flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,190,214,0.38),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(224,162,121,0.26),transparent_60%)]">
-        <TopBar />
+        <TopBar route={route} onNavigate={navigate} />
         <div className={workspaceGridClass}>
-          <SidePanel />
-          <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <SidePanel route={route} onNavigate={navigate} />
+          {isSettings && <SettingsPage onBack={() => navigate('workbench')} />}
+          <main
+            className={isSettings ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
+            aria-hidden={isSettings || undefined}
+          >
             <CanvasStage
               canvasRef={canvasRef}
               iframeRef={iframeRef}
@@ -120,7 +143,7 @@ function App() {
               onReset={activeControls.reset}
             />
           </main>
-          <InspectorPanel />
+          {!isSettings && <InspectorPanel />}
         </div>
       </div>
     </MotionConfig>

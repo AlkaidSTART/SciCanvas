@@ -4,6 +4,8 @@ import type {
   LegendItem,
   SimulationModel,
 } from '../types/experiment.ts'
+import { validateScene2D } from '../types/scene2d.ts'
+import type { Scene2DSpec } from '../types/scene2d.ts'
 
 export const MAX_SIMULATION_CODE_LENGTH = 20000
 export const MAX_GENERATED_CONTROLS = 6
@@ -14,17 +16,28 @@ const MAX_FORMULA_LENGTH = 600
 const MAX_INSIGHT_LENGTH = 800
 const CONTROL_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-/** 模型返回的实验描述。仿真代码单独存放，运行前只编译不执行。 */
-export interface GeneratedExperimentSpec {
+interface BaseGeneratedExperimentSpec {
   title: string
   domain: string
   formulaLatex: string
   insight: string
-  renderType: 'canvas2d'
   controls: ControlDefinition[]
   legend?: LegendItem[]
+}
+
+/** 传统代码沙盒模式：模型返回仿真代码，运行前只编译不执行。 */
+export interface Canvas2DExperimentSpec extends BaseGeneratedExperimentSpec {
+  renderType: 'canvas2d'
   simulationCode: string
 }
+
+/** 声明式点线渲染模式：模型先计算坐标系、线条、曲线与关键标点，由内置渲染器绘制。 */
+export interface Scene2DExperimentSpec extends BaseGeneratedExperimentSpec {
+  renderType: 'scene2d'
+  scene: Scene2DSpec
+}
+
+export type GeneratedExperimentSpec = Canvas2DExperimentSpec | Scene2DExperimentSpec
 
 export type GeneratedSpecValidation =
   | { ok: true; spec: GeneratedExperimentSpec }
@@ -69,8 +82,8 @@ function readText(
 }
 
 /**
- * 服务端与客户端共用的生成结果校验：字段、长度、控件范围、代码语法。
- * 任何一项不通过都不会返回可运行结果。
+ * 服务端与客户端共用的生成结果校验：字段、长度、控件范围，
+ * 以及按 renderType 分别校验 simulationCode（canvas2d）或 scene（scene2d）。
  */
 export function validateGeneratedSpec(input: unknown): GeneratedSpecValidation {
   const issues: string[] = []
@@ -84,8 +97,9 @@ export function validateGeneratedSpec(input: unknown): GeneratedSpecValidation {
   const formulaLatex = readText(raw.formulaLatex, 'formulaLatex', MAX_FORMULA_LENGTH, issues)
   const insight = readText(raw.insight, 'insight', MAX_INSIGHT_LENGTH, issues)
 
-  if (raw.renderType !== undefined && raw.renderType !== 'canvas2d') {
-    issues.push('renderType 目前仅支持 "canvas2d"')
+  const renderType = raw.renderType ?? 'canvas2d'
+  if (renderType !== 'canvas2d' && renderType !== 'scene2d') {
+    issues.push('renderType 目前仅支持 "canvas2d" 或 "scene2d"')
   }
 
   if (Array.isArray(raw.controls) && raw.controls.length > MAX_GENERATED_CONTROLS) {
@@ -104,6 +118,32 @@ export function validateGeneratedSpec(input: unknown): GeneratedSpecValidation {
     const parsed = parseLegend(raw.legend)
     issues.push(...parsed.issues)
     if (parsed.issues.length === 0) legend = parsed.legend
+  }
+
+  if (renderType === 'scene2d') {
+    const sceneResult = validateScene2D(
+      raw.scene,
+      controls.map((control) => control.key),
+    )
+    if (!sceneResult.ok) {
+      issues.push(...sceneResult.issues)
+    }
+    if (issues.length > 0 || !sceneResult.ok) {
+      return { ok: false, issues }
+    }
+    return {
+      ok: true,
+      spec: {
+        title,
+        domain,
+        formulaLatex,
+        insight,
+        renderType: 'scene2d',
+        controls,
+        ...(legend ? { legend } : {}),
+        scene: sceneResult.scene,
+      },
+    }
   }
 
   let simulationCode = ''

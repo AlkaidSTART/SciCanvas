@@ -14,6 +14,7 @@ import {
   SPRING_SNAPPY,
   TAP_BUTTON,
 } from './motion'
+import { SessionHistoryTab } from './SessionHistoryTab'
 
 interface WorkspaceDialogProps {
   onClose: () => void
@@ -90,7 +91,7 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
   const clearFeedback = useWorkspaceStore((state) => state.clearFeedback)
   const currentRecordId = useWorkbenchStore((state) => state.workspaceRecordId)
 
-  const [tab, setTab] = useState<'records' | 'settings'>('records')
+  const [tab, setTab] = useState<'records' | 'sessions' | 'settings'>('records')
   const [filter, setFilter] = useState<'all' | 'favorites'>('all')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -217,12 +218,12 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
               本地科研工作区
             </h2>
             <p className="m-0 text-[10px] text-ink-faint">
-              仅保存在当前浏览器 IndexedDB · 无需账号
+              实验记录保存在 IndexedDB · 会话与生成内容持久化在本地 SQLite
             </p>
           </div>
 
           <div className="flex items-center gap-1 rounded-[9px] border border-line bg-surface-soft/70 p-0.5">
-            {(['records', 'settings'] as const).map((item) => (
+            {(['records', 'sessions', 'settings'] as const).map((item) => (
               <button
                 key={item}
                 className={`relative rounded-[7px] px-2.5 py-1 text-[11px] transition-colors ${
@@ -239,7 +240,11 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
                   />
                 )}
                 <span className="relative z-[1]">
-                  {item === 'records' ? '实验记录' : '模型配置'}
+                  {item === 'records'
+                    ? '实验记录'
+                    : item === 'sessions'
+                      ? '会话记录'
+                      : '模型配置'}
                 </span>
               </button>
             ))}
@@ -510,6 +515,8 @@ export function WorkspaceDialog({ onClose }: WorkspaceDialogProps) {
                 )}
               </div>
             </motion.div>
+          ) : tab === 'sessions' ? (
+            <SessionHistoryTab onClose={onClose} />
           ) : (
             <motion.div
               key="workspace-settings"

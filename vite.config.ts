@@ -4,6 +4,7 @@ import babel from '@rolldown/plugin-babel'
 import { defineConfig, loadEnv } from 'vite'
 import { aiProxyPlugin } from './server/aiProxy.ts'
 import { standalonePlayerPlugin } from './server/playerBundle.ts'
+import { sessionApiPlugin } from './server/sessionApi.ts'
 
 const DEFAULT_TASK_TIMEOUT_MS = 45_000
 const host = process.env.TAURI_DEV_HOST
@@ -36,6 +37,9 @@ export default defineConfig(({ mode }) => {
       react(),
       babel({ presets: [reactCompilerPreset()] }),
       standalonePlayerPlugin(),
+      sessionApiPlugin({
+        dbPath: env.SCICANVAS_DB_PATH || undefined,
+      }),
       aiProxyPlugin({
         apiKey: env.AI_API_KEY,
         baseUrl: env.AI_BASE_URL || 'https://api.openai.com/v1',

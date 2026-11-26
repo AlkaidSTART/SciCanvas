@@ -1,6 +1,7 @@
-import type { GeneratedExperimentSpec } from '../ai/schema'
+import type { Canvas2DExperimentSpec, GeneratedExperimentSpec } from '../ai/schema'
 import { EXPERIMENTS } from '../experiments'
 import { CanvasRuntime } from '../runtime/CanvasRuntime'
+import { compileScene2DExperiment } from '../runtime/scene2dRenderer'
 import type {
   ProbeReadout,
   RuntimeErrorInfo,
@@ -384,7 +385,7 @@ function injectStyles(): void {
 }
 
 /** 生成自包含的模型定义；AI 代码只获得画布与数学等基础能力。 */
-function modelFromSpec(spec: GeneratedExperimentSpec): SimulationModel {
+function modelFromSpec(spec: Canvas2DExperimentSpec): SimulationModel {
   const factory = new Function(
     'window',
     'document',
@@ -420,6 +421,9 @@ function modelFromSpec(spec: GeneratedExperimentSpec): SimulationModel {
 }
 
 function definitionFromSpec(spec: GeneratedExperimentSpec): ExperimentDefinition {
+  if (spec.renderType === 'scene2d') {
+    return compileScene2DExperiment(spec, 'ai-export')
+  }
   return {
     id: 'ai-export',
     title: spec.title,

@@ -15,6 +15,7 @@ const BALL_COLLAPSED_SIZE: f64 = 72.0;
 pub struct CapturedFormulaPayload {
     pub kind: String,
     pub content: Option<String>,
+    pub source: Option<String>,
     pub data_url: Option<String>,
     pub name: Option<String>,
 }
@@ -58,7 +59,11 @@ pub fn floating_ball_open(app: AppHandle) -> Result<PermissionStatus, String> {
         builder = builder.position(pos_x, pos_y);
     }
 
-    builder.build().map_err(|e| e.to_string())?;
+    let window = builder.build().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    if let Ok(ns_window) = window.ns_window() {
+        macos_capture::configure_floating_ball_window(ns_window);
+    }
     emit_visibility(&app, true);
     Ok(macos_capture::check_permissions())
 }
@@ -127,6 +132,7 @@ pub async fn capture_selected_formula(app: AppHandle) -> Result<TextCaptureOutco
             let payload = CapturedFormulaPayload {
                 kind: "text".to_string(),
                 content: Some(text.clone()),
+                source: outcome.source.clone(),
                 data_url: None,
                 name: None,
             };
@@ -156,6 +162,7 @@ pub async fn capture_formula_screenshot(app: AppHandle) -> Result<ImageCaptureOu
             let payload = CapturedFormulaPayload {
                 kind: "image".to_string(),
                 content: None,
+                source: None,
                 data_url: Some(data_url.clone()),
                 name: Some("悬浮球框选公式.png".to_string()),
             };

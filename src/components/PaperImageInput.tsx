@@ -11,7 +11,10 @@ import {
 import type { SupportedImageType } from '../ai/image'
 import { buildRecognitionPrompt } from '../ai/recognition'
 import { useFloatingBallStore } from '../store/useFloatingBallStore'
+import { useSessionStore } from '../store/useSessionStore'
+import { AnimatePresence, motion } from 'motion/react'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import { FAST_TRANSITION, TAP_BUTTON } from './motion'
 
 interface LoadedImage {
   dataUrl: string
@@ -188,16 +191,40 @@ export function PaperImageInput({ onImageLoaded }: PaperImageInputProps = {}) {
     generateControllerRef.current = controller
     setGenerating(true)
     setAiError(null)
+    const sessionId = await useSessionStore.getState().startSession({
+      title: (draft.description || draft.formulaLatex || '论文截图实验').slice(0, 48),
+      source: 'image',
+      initialPrompt: prompt,
+      initialMode: 'create',
+    })
     try {
       const spec = await generateExperiment(prompt, { signal: controller.signal })
       applyGeneratedExperiment(spec, undefined, { newRecord: true })
+      if (sessionId) {
+        void useSessionStore.getState().recordGeneration(sessionId, {
+          mode: 'create',
+          prompt,
+          spec,
+          params: useWorkbenchStore.getState().params,
+          assistantSummary: `已根据论文截图生成「${spec.title}」（${spec.domain}）`,
+        })
+      }
       setImage(null)
       setRecognition(null)
       setDraft(null)
       setImageError(null)
     } catch (error) {
       if (!controller.signal.aborted) {
-        setAiError(error instanceof Error ? error.message : '生成失败，请稍后重试')
+        const message = error instanceof Error ? error.message : '生成失败，请稍后重试'
+        setAiError(message)
+        if (sessionId) {
+          void useSessionStore.getState().recordMessage(sessionId, {
+            role: 'assistant',
+            mode: 'create',
+            content: message,
+            status: 'error',
+          })
+        }
       }
     } finally {
       if (generateControllerRef.current === controller) {

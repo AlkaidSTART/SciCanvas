@@ -1,4 +1,4 @@
-export type RenderType = 'canvas2d'
+export type RenderType = 'canvas2d' | 'scene2d'
 
 export interface SliderControl {
   type: 'slider'
@@ -487,8 +487,8 @@ export function validateExperiment(input: unknown): ValidationResult {
     }
   }
 
-  if (input.renderType !== 'canvas2d') {
-    issues.push('renderType 目前仅支持 "canvas2d"')
+  if (input.renderType !== 'canvas2d' && input.renderType !== 'scene2d') {
+    issues.push('renderType 目前仅支持 "canvas2d" 或 "scene2d"')
   }
 
   if (input.legend !== undefined) {

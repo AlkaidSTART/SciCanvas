@@ -15,6 +15,12 @@ dist-ssr
 .env.*
 !.env.example
 
+# SQLite local database files
+data/
+*.db
+*.db-wal
+*.db-shm
+
 # Tauri / Rust build outputs
 src-tauri/target
 

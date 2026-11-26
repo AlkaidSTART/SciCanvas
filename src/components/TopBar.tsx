@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { exportCurrentExperiment } from '../export/exporter'
+import {
+  closeFloatingBall,
+  isDesktopApp,
+  openFloatingBall,
+  requestCapturePermission,
+} from '../floatingBall/bridge'
+import { useFloatingBallStore } from '../store/useFloatingBallStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { useWorkspaceStore } from '../store/useWorkspaceStore'
+import type { AppRoute } from '../hooks/useAppRoute'
 import { BoltIcon, PanelLeftIcon, PanelRightIcon } from './icons'
 import { FAST_TRANSITION, TAP_BUTTON, TAP_ICON, TOAST_VARIANTS } from './motion'
 import { WorkspaceDialog } from './WorkspaceDialog'
+
+interface TopBarProps {
+  route: AppRoute
+  onNavigate: (route: AppRoute) => void
+}
 
 interface ExportToast {
   tone: 'success' | 'error'
@@ -18,7 +31,8 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
-export function TopBar() {
+export function TopBar({ route, onNavigate }: TopBarProps) {
+  const isSettings = route === 'settings'
   const title = useWorkbenchStore((state) => state.experiment.title)
   const domain = useWorkbenchStore((state) => state.experiment.domain)
   const presentation = useWorkbenchStore((state) => state.presentation)
@@ -31,16 +45,84 @@ export function TopBar() {
   const saving = useWorkspaceStore((state) => state.saving)
   const lastSavedAt = useWorkspaceStore((state) => state.lastSavedAt)
   const storageError = useWorkspaceStore((state) => state.storageError)
+  const floatingBallOpen = useFloatingBallStore((state) => state.floatingBallOpen)
+  const setFloatingBallOpen = useFloatingBallStore((state) => state.setFloatingBallOpen)
+  const floatingBallNotice = useFloatingBallStore((state) => state.notice)
+  const clearFloatingBallNotice = useFloatingBallStore((state) => state.clearNotice)
 
   const [exporting, setExporting] = useState(false)
+  const [togglingBall, setTogglingBall] = useState(false)
   const [toast, setToast] = useState<ExportToast | null>(null)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
 
+  const activeToast: ExportToast | null =
+    toast ??
+    (floatingBallNotice
+      ? {
+          tone: floatingBallNotice.tone === 'error' ? 'error' : 'success',
+          message: floatingBallNotice.message,
+        }
+      : null)
+
+  const activeToastTone = activeToast?.tone
+  const activeToastMessage = activeToast?.message
+
   useEffect(() => {
-    if (toast?.tone !== 'success') return undefined
-    const timer = window.setTimeout(() => setToast(null), 4000)
+    if (activeToastTone !== 'success') return undefined
+    const timer = window.setTimeout(() => {
+      setToast(null)
+      clearFloatingBallNotice()
+    }, 4000)
     return () => window.clearTimeout(timer)
-  }, [toast])
+  }, [activeToastTone, activeToastMessage, clearFloatingBallNotice])
+
+  const handleToggleFloatingBall = async () => {
+    if (togglingBall) return
+    if (!isDesktopApp()) {
+      setToast({
+        tone: 'error',
+        message: '悬浮球功能需要在 SciCanvas 桌面端中使用。',
+      })
+      return
+    }
+    setTogglingBall(true)
+    try {
+      if (floatingBallOpen) {
+        await closeFloatingBall()
+        setFloatingBallOpen(false)
+      } else {
+        const permissions = await openFloatingBall()
+        setFloatingBallOpen(true)
+        if (permissions.supported && !permissions.accessibility) {
+          const updated = await requestCapturePermission('accessibility')
+          if (!updated.accessibility) {
+            setToast({
+              tone: 'success',
+              message:
+                '悬浮球已开启，并已向系统请求「辅助功能」权限；允许后即可直接把论文中选中的公式加入对话框。',
+            })
+          } else {
+            setToast({
+              tone: 'success',
+              message: '悬浮球已开启：在论文中选中公式后单击悬浮球即可加入对话框。',
+            })
+          }
+        } else {
+          setToast({
+            tone: 'success',
+            message: '悬浮球已开启：在论文中选中公式后单击悬浮球即可加入对话框。',
+          })
+        }
+      }
+    } catch (error) {
+      setToast({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '悬浮球切换失败，请稍后重试',
+      })
+    } finally {
+      setTogglingBall(false)
+    }
+  }
 
   const handleExport = async () => {
     if (exporting) return
@@ -62,7 +144,7 @@ export function TopBar() {
     }
   }
 
-  if (presentation) {
+  if (presentation && !isSettings) {
     return (
       <motion.header
         key="presentation-header"
@@ -112,20 +194,25 @@ export function TopBar() {
         className="z-10 flex h-[48px] flex-none items-center gap-4 border-b border-line bg-panel/90 px-3.5 backdrop-blur-[10px] max-[640px]:h-[52px] max-[640px]:gap-2.5 max-[640px]:px-3"
       >
         <div className="flex flex-none items-center gap-2">
-          <motion.span
-            whileHover={{ scale: 1.06, rotate: -4 }}
+          <motion.button
+            type="button"
+            onClick={() => onNavigate('workbench')}
+            whileHover={{ scale: 1.04 }}
             whileTap={TAP_ICON}
             transition={{ type: 'spring', stiffness: 450, damping: 24 }}
-            className="grid size-[28px] flex-none place-items-center rounded-[8px] border border-[rgba(169,150,196,0.38)] bg-[radial-gradient(circle_at_30%_25%,rgba(195,178,218,0.48),rgba(224,162,121,0.22))] text-[#6d5a7d]"
+            className="flex flex-none items-center gap-2 rounded-lg text-left"
+            title="返回工作台"
           >
-            <BoltIcon className="size-4" />
-          </motion.span>
-          <span className="flex items-baseline gap-1.5 leading-none">
-            <span className="text-[14px] font-[650] tracking-[0.02em]">SciCanvas</span>
-            <span className="hidden text-[10px] tracking-[0.12em] text-ink-faint min-[1180px]:inline">
-              科研工作台
+            <span className="grid size-[28px] flex-none place-items-center rounded-[8px] border border-[rgba(169,150,196,0.38)] bg-[radial-gradient(circle_at_30%_25%,rgba(195,178,218,0.48),rgba(224,162,121,0.22))] text-[#6d5a7d]">
+              <BoltIcon className="size-4" />
             </span>
-          </span>
+            <span className="flex items-baseline gap-1.5 leading-none">
+              <span className="text-[14px] font-[650] tracking-[0.02em] text-ink">SciCanvas</span>
+              <span className="hidden text-[10px] tracking-[0.12em] text-ink-faint min-[1180px]:inline">
+                科研工作台
+              </span>
+            </span>
+          </motion.button>
 
           <div className="ml-1 hidden items-center gap-1 border-l border-line pl-2.5 min-[960px]:flex">
             <motion.button
@@ -214,6 +301,28 @@ export function TopBar() {
 
         <div className="flex flex-none items-center gap-1.5 max-[640px]:hidden">
           <motion.button
+            whileTap={togglingBall ? undefined : TAP_BUTTON}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+              floatingBallOpen
+                ? 'border-accent-line bg-accent-soft text-accent-strong'
+                : 'border-line bg-surface text-ink-dim enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink'
+            }`}
+            type="button"
+            disabled={togglingBall}
+            aria-pressed={floatingBallOpen}
+            title="开启屏幕置顶悬浮球，看论文时一键将选中公式加入对话框"
+            onClick={() => void handleToggleFloatingBall()}
+          >
+            <span
+              className={`size-1.5 rounded-full ${
+                floatingBallOpen
+                  ? 'bg-mint shadow-[0_0_0_2px_rgba(127,175,148,0.28)]'
+                  : 'bg-ink-faint/60'
+              }`}
+            />
+            {floatingBallOpen ? '悬浮球已开' : '悬浮球'}
+          </motion.button>
+          <motion.button
             whileTap={TAP_BUTTON}
             className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
             type="button"
@@ -225,7 +334,10 @@ export function TopBar() {
             whileTap={TAP_BUTTON}
             className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
             type="button"
-            onClick={enterPresentation}
+            onClick={() => {
+              if (isSettings) onNavigate('workbench')
+              enterPresentation()
+            }}
           >
             演示模式
           </motion.button>
@@ -243,32 +355,37 @@ export function TopBar() {
       </motion.header>
 
       <AnimatePresence>
-        {toast && (
+        {activeToast && (
           <motion.div
-            key={`${toast.tone}-${toast.message}`}
+            key={`${activeToast.tone}-${activeToast.message}`}
             variants={TOAST_VARIANTS}
             initial="hidden"
             animate="visible"
             exit="exit"
             className={`fixed right-3.5 top-[56px] z-40 flex w-[min(380px,calc(100vw_-_32px))] items-start gap-2 rounded-[11px] border px-3.5 py-3 shadow-[0_16px_36px_rgba(58,51,43,0.16)] backdrop-blur-md max-[640px]:right-3 max-[640px]:top-[58px] ${
-              toast.tone === 'error'
+              activeToast.tone === 'error'
                 ? 'border-rose/40 bg-[rgba(253,246,244,0.96)]'
                 : 'border-line bg-panel/96'
             }`}
-            role={toast.tone === 'error' ? 'alert' : 'status'}
+            role={activeToast.tone === 'error' ? 'alert' : 'status'}
           >
             <span
               className={`mt-1 size-1.5 flex-none rounded-full ${
-                toast.tone === 'error' ? 'bg-danger' : 'bg-mint'
+                activeToast.tone === 'error' ? 'bg-danger' : 'bg-mint'
               }`}
             />
-            <p className="m-0 flex-1 text-[11.5px] leading-[1.6] text-ink-dim">{toast.message}</p>
+            <p className="m-0 flex-1 text-[11.5px] leading-[1.6] text-ink-dim">
+              {activeToast.message}
+            </p>
             <motion.button
               whileTap={TAP_BUTTON}
               className="flex-none rounded-md border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-faint transition-colors hover:text-ink-dim"
               type="button"
-              onClick={() => setToast(null)}
-              aria-label="关闭导出提示"
+              onClick={() => {
+                setToast(null)
+                clearFloatingBallNotice()
+              }}
+              aria-label="关闭提示"
             >
               关闭
             </motion.button>

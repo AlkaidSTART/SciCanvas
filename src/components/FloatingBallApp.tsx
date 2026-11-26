@@ -90,9 +90,15 @@ export function FloatingBallApp() {
         triggerSuccessFlash()
         const preview =
           outcome.text.length > 36 ? `${outcome.text.slice(0, 36)}…` : outcome.text
+        const sourceTag =
+          outcome.source === 'ax'
+            ? '（直读）'
+            : outcome.source === 'clipboard'
+              ? '（降级读取，剪贴板已恢复）'
+              : ''
         setFeedback({
           tone: 'success',
-          message: `已加入对话框：${preview}`,
+          message: `已加入对话框${sourceTag}：${preview}`,
         })
       } else if (outcome.needsPermission === 'accessibility') {
         setExpanded(true)

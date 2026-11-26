@@ -21,6 +21,8 @@ export function useExperimentRuntime(
   canvasRef: RefObject<HTMLCanvasElement | null>,
 ): ExperimentRuntimeControls {
   const experiment = useWorkbenchStore((state) => state.experiment)
+  const source = useWorkbenchStore((state) => state.source)
+  const aiSpec = useWorkbenchStore((state) => state.aiSpec)
   const params = useWorkbenchStore((state) => state.params)
   const speed = useWorkbenchStore((state) => state.speed)
   const reloadKey = useWorkbenchStore((state) => state.reloadKey)
@@ -29,6 +31,8 @@ export function useExperimentRuntime(
   const syncError = useWorkbenchStore((state) => state.syncError)
   const syncTelemetry = useWorkbenchStore((state) => state.syncTelemetry)
   const syncProbe = useWorkbenchStore((state) => state.syncProbe)
+  const markAiVersionGood = useWorkbenchStore((state) => state.markAiVersionGood)
+  const usesSandbox = source === 'ai' && aiSpec?.renderType === 'canvas2d'
 
   const runtimeRef = useRef<CanvasRuntime | null>(null)
   const paramsRef = useRef(params)
@@ -43,6 +47,7 @@ export function useExperimentRuntime(
   }, [speed])
 
   useEffect(() => {
+    if (usesSandbox) return undefined
     const canvas = canvasRef.current
     if (!canvas) return undefined
 
@@ -65,13 +70,27 @@ export function useExperimentRuntime(
     })
     runtimeRef.current = runtime
     runtime.start()
+    if (source === 'ai' && runtime.getStatus() !== 'error') {
+      markAiVersionGood()
+    }
 
     return () => {
       runtime.destroy()
       runtimeRef.current = null
       syncProbe(null)
     }
-  }, [canvasRef, experiment, reloadKey, syncError, syncStatus, syncTelemetry, syncProbe])
+  }, [
+    canvasRef,
+    experiment,
+    markAiVersionGood,
+    reloadKey,
+    source,
+    syncError,
+    syncProbe,
+    syncStatus,
+    syncTelemetry,
+    usesSandbox,
+  ])
 
   // 边界态应用：参数已通过 store 原子更新，这里只负责重置并继续播放。
   useEffect(() => {

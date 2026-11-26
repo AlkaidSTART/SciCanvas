@@ -1,5 +1,5 @@
 import katex from 'katex'
-import { compileSimulationCode } from '../ai/schema'
+import { compileSimulationCode, validateGeneratedSpec } from '../ai/schema'
 import type { GeneratedExperimentSpec } from '../ai/schema'
 import type { ExperimentDefinition, ParamValues } from '../types/experiment'
 import { EXPORT_FORMAT_VERSION } from './types'
@@ -72,7 +72,7 @@ export function renderFormulaMathml(latex: string): string {
 export function createExportPayload(input: ExportInput): ExportPayload {
   const { experiment, params, speed, source, aiSpec } = input
 
-  if (experiment.renderType !== 'canvas2d') {
+  if (experiment.renderType !== 'canvas2d' && experiment.renderType !== 'scene2d') {
     throw new ExportError(`暂不支持导出 "${experiment.renderType}" 渲染类型的实验`)
   }
 
@@ -80,12 +80,19 @@ export function createExportPayload(input: ExportInput): ExportPayload {
     if (!aiSpec) {
       throw new ExportError('当前 AI 实验缺少可导出的代码，请重新生成后再试')
     }
-    if (!aiSpec.simulationCode.trim()) {
-      throw new ExportError('AI 实验代码为空，无法生成可运行的导出文件')
-    }
-    const compiled = compileSimulationCode(aiSpec.simulationCode)
-    if (!compiled.ok) {
-      throw new ExportError(`AI 实验代码无法编译：${compiled.message}`)
+    if (aiSpec.renderType === 'scene2d') {
+      const validation = validateGeneratedSpec(aiSpec)
+      if (!validation.ok) {
+        throw new ExportError(`AI 声明式场景校验失败：${validation.issues[0]}`)
+      }
+    } else {
+      if (!aiSpec.simulationCode.trim()) {
+        throw new ExportError('AI 实验代码为空，无法生成可运行的导出文件')
+      }
+      const compiled = compileSimulationCode(aiSpec.simulationCode)
+      if (!compiled.ok) {
+        throw new ExportError(`AI 实验代码无法编译：${compiled.message}`)
+      }
     }
     return {
       version: EXPORT_FORMAT_VERSION,

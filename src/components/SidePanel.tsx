@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { generateExperiment } from '../ai/client'
 import { MAX_PROMPT_LENGTH } from '../ai/prompt'
 import { EXPERIMENTS } from '../experiments'
+import type { AppRoute } from '../hooks/useAppRoute'
 import type { RuntimeStatus } from '../runtime/CanvasRuntime'
 import { useFloatingBallStore } from '../store/useFloatingBallStore'
+import { useSessionStore } from '../store/useSessionStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import { SettingsIcon } from './icons'
+import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 import { PaperImageInput } from './PaperImageInput'
+
+interface SidePanelProps {
+  route: AppRoute
+  onNavigate: (route: AppRoute) => void
+}
 
 const STATUS_LABEL: Record<RuntimeStatus, string> = {
   running: '运行中',
@@ -43,7 +53,8 @@ const INSPIRATION_TAGS = [
   },
 ]
 
-export function SidePanel() {
+export function SidePanel({ route, onNavigate }: SidePanelProps) {
+  const isSettings = route === 'settings'
   const experiment = useWorkbenchStore((state) => state.experiment)
   const status = useWorkbenchStore((state) => state.status)
   const source = useWorkbenchStore((state) => state.source)
@@ -59,6 +70,7 @@ export function SidePanel() {
   const [activeTab, setActiveTab] = useState<'presets' | 'ai'>('presets')
   const prompt = useFloatingBallStore((state) => state.promptDraft)
   const setPrompt = useFloatingBallStore((state) => state.setPromptDraft)
+  const floatingBallOpen = useFloatingBallStore((state) => state.floatingBallOpen)
   const [loading, setLoading] = useState(false)
   const [refineText, setRefineText] = useState('')
   const [refining, setRefining] = useState(false)
@@ -70,11 +82,22 @@ export function SidePanel() {
 
   useEffect(() => {
     let timer: number | null = null
+    let rafId: number | null = null
     const unsubscribe = useFloatingBallStore.subscribe((state, prevState) => {
       if (state.promptFlashKey === prevState.promptFlashKey) return
+      onNavigate('workbench')
       setActiveTab('ai')
       setPromptHighlighted(true)
-      promptInputRef.current?.focus()
+      if (rafId !== null) window.cancelAnimationFrame(rafId)
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        const input = promptInputRef.current
+        if (!input) return
+        input.focus()
+        const end = input.value.length
+        input.setSelectionRange(end, end)
+        input.scrollTop = input.scrollHeight
+      })
       if (timer !== null) window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         setPromptHighlighted(false)
@@ -83,9 +106,10 @@ export function SidePanel() {
     })
     return () => {
       unsubscribe()
+      if (rafId !== null) window.cancelAnimationFrame(rafId)
       if (timer !== null) window.clearTimeout(timer)
     }
-  }, [])
+  }, [onNavigate])
 
   useEffect(
     () => () => {
@@ -108,12 +132,37 @@ export function SidePanel() {
     controllerRef.current = controller
     setLoading(true)
     setAiError(null)
+    const sessionStore = useSessionStore.getState()
+    const sessionId = await sessionStore.startSession({
+      title: text.slice(0, 48),
+      source: 'text',
+      initialPrompt: text,
+      initialMode: 'create',
+    })
     try {
       const spec = await generateExperiment(text, { signal: controller.signal })
       applyGeneratedExperiment(spec, undefined, { newRecord: true })
+      if (sessionId) {
+        void useSessionStore.getState().recordGeneration(sessionId, {
+          mode: 'create',
+          prompt: text,
+          spec,
+          params: useWorkbenchStore.getState().params,
+          assistantSummary: `已生成实验「${spec.title}」（${spec.domain}）`,
+        })
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
-        setAiError(error instanceof Error ? error.message : '生成失败，请稍后重试')
+        const message = error instanceof Error ? error.message : '生成失败，请稍后重试'
+        setAiError(message)
+        if (sessionId) {
+          void useSessionStore.getState().recordMessage(sessionId, {
+            role: 'assistant',
+            mode: 'create',
+            content: message,
+            status: 'error',
+          })
+        }
       }
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null
@@ -143,6 +192,24 @@ export function SidePanel() {
     refineControllerRef.current = controller
     setRefining(true)
     setAiError(null)
+    const sessionStore = useSessionStore.getState()
+    let sessionId = sessionStore.activeSessionId
+    if (!sessionId) {
+      sessionId = await sessionStore.startSession({
+        title: current.aiSpec.title,
+        source: 'text',
+        workspaceRecordId: current.workspaceRecordId,
+        initialPrompt: text,
+        initialMode: 'refine',
+      })
+    } else {
+      await sessionStore.recordMessage(sessionId, {
+        role: 'user',
+        mode: 'refine',
+        content: text,
+        status: 'ok',
+      })
+    }
     try {
       const spec = await generateExperiment(
         {
@@ -155,9 +222,27 @@ export function SidePanel() {
       )
       applyGeneratedExperiment(spec)
       setRefineText('')
+      if (sessionId) {
+        void useSessionStore.getState().recordGeneration(sessionId, {
+          mode: 'refine',
+          prompt: text,
+          spec,
+          params: useWorkbenchStore.getState().params,
+          assistantSummary: `已微调更新「${spec.title}」`,
+        })
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
-        setAiError(error instanceof Error ? error.message : '修改失败，已保留当前实验')
+        const message = error instanceof Error ? error.message : '修改失败，已保留当前实验'
+        setAiError(message)
+        if (sessionId) {
+          void useSessionStore.getState().recordMessage(sessionId, {
+            role: 'assistant',
+            mode: 'refine',
+            content: message,
+            status: 'error',
+          })
+        }
       }
     } finally {
       if (refineControllerRef.current === controller) refineControllerRef.current = null
@@ -188,34 +273,54 @@ export function SidePanel() {
         aria-label="左侧栏切换"
       >
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            activeTab === 'presets'
-              ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
+          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+            !isSettings && activeTab === 'presets'
+              ? 'text-ink'
               : 'text-ink-faint hover:text-ink-dim'
           }`}
           type="button"
           role="tab"
-          aria-selected={activeTab === 'presets'}
-          onClick={() => setActiveTab('presets')}
+          aria-selected={!isSettings && activeTab === 'presets'}
+          onClick={() => {
+            if (isSettings) onNavigate('workbench')
+            setActiveTab('presets')
+          }}
         >
-          <span>预设实验</span>
-          <span className="rounded-[4px] bg-ink-dim/10 px-1 py-px font-mono text-[9px] text-ink-dim">
+          {!isSettings && activeTab === 'presets' && (
+            <motion.span
+              layoutId="sidepanel-tab-pill"
+              transition={SPRING_SNAPPY}
+              className="absolute inset-0 rounded-[7px] bg-surface shadow-[0_1px_2px_rgba(58,51,43,0.08)]"
+            />
+          )}
+          <span className="relative z-[1]">预设实验</span>
+          <span className="relative z-[1] rounded-[4px] bg-ink-dim/10 px-1 py-px font-mono text-[9px] text-ink-dim">
             {EXPERIMENTS.length}
           </span>
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
-            activeTab === 'ai'
-              ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(58,51,43,0.08)]'
-              : 'text-ink-faint hover:text-ink-dim'
+          className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-[7px] px-2 py-1 text-[11px] font-medium transition-colors ${
+            !isSettings && activeTab === 'ai' ? 'text-ink' : 'text-ink-faint hover:text-ink-dim'
           }`}
           type="button"
           role="tab"
-          aria-selected={activeTab === 'ai'}
-          onClick={() => setActiveTab('ai')}
+          aria-selected={!isSettings && activeTab === 'ai'}
+          onClick={() => {
+            if (isSettings) onNavigate('workbench')
+            setActiveTab('ai')
+          }}
         >
-          {source === 'ai' && <span className="size-1.5 rounded-full bg-[#8a76a8]" />}
-          <span>AI 沙盒</span>
+          {!isSettings && activeTab === 'ai' && (
+            <motion.span
+              layoutId="sidepanel-tab-pill"
+              transition={SPRING_SNAPPY}
+              className="absolute inset-0 rounded-[7px] bg-surface shadow-[0_1px_2px_rgba(58,51,43,0.08)]"
+            />
+          )}
+          {source === 'ai' && (
+            <span className="relative z-[1] size-1.5 rounded-full bg-[#8a76a8]" />
+          )}
+          <span className="relative z-[1]">AI 沙盒</span>
         </button>
       </div>
 
@@ -232,38 +337,53 @@ export function SidePanel() {
             </span>
           </h2>
           <div className="flex flex-col gap-1.5 max-[959px]:flex-row max-[959px]:gap-2">
-            {EXPERIMENTS.map((preset) => {
+            {EXPERIMENTS.map((preset, index) => {
               const active = source === 'preset' && preset.id === experiment.id
               return (
-                <button
+                <motion.button
                   key={preset.id}
-                  className={`flex w-full items-center gap-2.5 rounded-[9px] border px-2.5 py-2 text-left transition-colors max-[959px]:w-auto max-[959px]:min-w-[182px] max-[959px]:flex-none ${
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ ...FAST_TRANSITION, delay: index * 0.03 }}
+                  whileHover={{ x: 2 }}
+                  whileTap={{ scale: 0.985 }}
+                  className={`relative flex w-full items-center gap-2.5 overflow-hidden rounded-[9px] border px-2.5 py-2 text-left transition-colors max-[959px]:w-auto max-[959px]:min-w-[182px] max-[959px]:flex-none ${
                     active
-                      ? 'border-[rgba(224,162,121,0.42)] bg-[linear-gradient(135deg,rgba(240,205,178,0.42),rgba(240,205,178,0.12))] shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
+                      ? 'border-[rgba(224,162,121,0.42)] shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
                       : 'border-line bg-surface/55 hover:border-line-strong hover:bg-surface-soft'
                   }`}
                   type="button"
-                  onClick={() => selectExperiment(preset.id)}
+                  onClick={() => {
+                    if (isSettings) onNavigate('workbench')
+                    selectExperiment(preset.id)
+                  }}
                   aria-current={active ? 'true' : undefined}
                   title={preset.insight}
                 >
+                  {active && (
+                    <motion.span
+                      layoutId="preset-active-bg"
+                      transition={SPRING_SNAPPY}
+                      className="pointer-events-none absolute inset-0 rounded-[8px] bg-[linear-gradient(135deg,rgba(240,205,178,0.42),rgba(240,205,178,0.12))]"
+                    />
+                  )}
                   <span
-                    className={`size-[7px] flex-none rounded-full ${
+                    className={`relative z-[1] size-[7px] flex-none rounded-full ${
                       active ? DOT_STYLE[status] : 'bg-[rgba(120,100,78,0.25)]'
                     }`}
                   />
-                  <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                  <span className="relative z-[1] flex min-w-0 flex-1 flex-col gap-[2px]">
                     <strong className="truncate text-[12px] font-[550] leading-[1.35] text-ink">
                       {preset.title}
                     </strong>
                     <small className="truncate text-[10px] text-ink-faint">{preset.domain}</small>
                   </span>
                   {active && (
-                    <span className="whitespace-nowrap font-mono text-[9px] text-accent-strong">
+                    <span className="relative z-[1] whitespace-nowrap font-mono text-[9px] text-accent-strong">
                       {STATUS_LABEL[status]}
                     </span>
                   )}
-                </button>
+                </motion.button>
               )
             })}
           </div>
@@ -277,16 +397,24 @@ export function SidePanel() {
             activeTab === 'ai' ? '' : 'min-[960px]:hidden'
           }`}
         >
-          {source === 'ai' && aiSpec && (
-            <div className="flex flex-col gap-1 rounded-[9px] border border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.09)] px-2.5 py-2">
-              <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#6d5a7d]">
-                当前为 AI 实验
-              </span>
-              <span className="truncate text-[11.5px] text-ink" title={aiSpec.title}>
-                {aiSpec.title}
-              </span>
-            </div>
-          )}
+          <AnimatePresence>
+            {source === 'ai' && aiSpec && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={FAST_TRANSITION}
+                className="flex flex-col gap-1 rounded-[9px] border border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.09)] px-2.5 py-2"
+              >
+                <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#6d5a7d]">
+                  当前为 AI 实验
+                </span>
+                <span className="truncate text-[11.5px] text-ink" title={aiSpec.title}>
+                  {aiSpec.title}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <PaperImageInput onImageLoaded={() => setActiveTab('ai')} />
 
@@ -310,8 +438,9 @@ export function SidePanel() {
             <div className="flex items-center justify-between gap-2 text-[9.5px] text-ink-faint">
               <div className="flex min-w-0 gap-1.5">
                 {EXAMPLE_PROMPTS.map((example, index) => (
-                  <button
+                  <motion.button
                     key={example}
+                    whileTap={loading ? undefined : TAP_BUTTON}
                     className="truncate rounded-[5px] border border-line bg-surface px-1.5 py-0.5 text-[9.5px] text-ink-faint transition-colors enabled:hover:border-line-strong enabled:hover:text-ink-dim disabled:cursor-not-allowed disabled:opacity-50"
                     type="button"
                     disabled={loading}
@@ -319,7 +448,7 @@ export function SidePanel() {
                     onClick={() => setPrompt(example)}
                   >
                     示例 {index + 1}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
               <span className="whitespace-nowrap font-mono tabular-nums">
@@ -328,112 +457,163 @@ export function SidePanel() {
             </div>
 
             <div className="flex gap-2">
-              <button
+              <motion.button
+                whileTap={loading || refining || healing ? undefined : TAP_BUTTON}
                 className="flex-1 rounded-lg border border-transparent bg-accent-strong px-3 py-[6px] text-xs font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
                 type="submit"
                 disabled={loading || refining || healing}
               >
                 {loading ? '生成中…' : '生成实验'}
-              </button>
+              </motion.button>
               {loading ? (
-                <button
+                <motion.button
+                  whileTap={TAP_BUTTON}
                   className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
                   type="button"
                   onClick={handleCancel}
                 >
                   取消
-                </button>
+                </motion.button>
               ) : (
                 source === 'ai' && (
-                  <button
+                  <motion.button
+                    whileTap={TAP_BUTTON}
                     className="whitespace-nowrap rounded-lg border border-line bg-surface px-2.5 py-[6px] text-xs text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
                     type="button"
                     onClick={resetToDefault}
                   >
                     回到预设
-                  </button>
+                  </motion.button>
                 )
               )}
             </div>
           </form>
 
-          {aiError && (
-            <p
-              className="m-0 rounded-[9px] border border-rose/30 bg-rose/[0.1] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
-              role="alert"
-            >
-              {aiError}
-            </p>
-          )}
+          <AnimatePresence>
+            {aiError && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={FAST_TRANSITION}
+                className="m-0 rounded-[9px] border border-rose/30 bg-rose/[0.1] px-2.5 py-2 text-[10.5px] leading-[1.55] text-[#a9605f]"
+                role="alert"
+              >
+                {aiError}
+              </motion.p>
+            )}
+          </AnimatePresence>
 
           <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
             生成失败不会替换当前实验；未配置凭证时预设案例始终可用。
           </p>
 
-          {source === 'ai' && aiSpec && (
-            <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.06)] p-2.5">
-              <h3 className="m-0 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6d5a7d]">
-                基于当前实验修改
-                <span className="font-mono text-[9px] normal-case tracking-normal text-ink-faint">
-                  增量
-                </span>
-              </h3>
+          <AnimatePresence>
+            {source === 'ai' && aiSpec && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={FAST_TRANSITION}
+                className="flex flex-col gap-2 rounded-[10px] border border-[rgba(138,118,168,0.32)] bg-[rgba(138,118,168,0.06)] p-2.5"
+              >
+                <h3 className="m-0 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6d5a7d]">
+                  基于当前实验修改
+                  <span className="font-mono text-[9px] normal-case tracking-normal text-ink-faint">
+                    增量
+                  </span>
+                </h3>
 
-              <div className="flex flex-wrap gap-1.5">
-                {INSPIRATION_TAGS.map((tag) => (
-                  <button
-                    key={tag.label}
-                    className="rounded-full border border-[rgba(138,118,168,0.32)] bg-surface px-2 py-[3px] text-[9.5px] text-[#6d5a7d] transition-colors enabled:hover:border-[rgba(138,118,168,0.55)] enabled:hover:bg-[rgba(138,118,168,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
-                    type="button"
-                    disabled={refining || loading || healing}
-                    title={tag.instruction}
-                    onClick={() => void handleRefine(tag.instruction)}
-                  >
-                    {tag.label}
-                  </button>
-                ))}
-              </div>
-
-              <form className="flex flex-col gap-1.5" onSubmit={handleRefineSubmit}>
-                <textarea
-                  className="resize-none rounded-[8px] border border-line bg-surface-soft px-2.5 py-[7px] text-[11px] leading-[1.55] text-ink placeholder:text-ink-faint focus:border-accent-line focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  rows={2}
-                  value={refineText}
-                  maxLength={MAX_PROMPT_LENGTH}
-                  disabled={refining}
-                  onChange={(event) => setRefineText(event.target.value)}
-                  placeholder="例如：把噪声强度做成可调滑块；用虚线对比理想轨迹…"
-                  aria-label="实验修改指令"
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
-                    type="submit"
-                    disabled={refining || loading || healing}
-                  >
-                    {refining ? '应用中…' : '应用修改'}
-                  </button>
-                  {refining && (
-                    <button
-                      className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                <div className="flex flex-wrap gap-1.5">
+                  {INSPIRATION_TAGS.map((tag) => (
+                    <motion.button
+                      key={tag.label}
+                      whileTap={refining || loading || healing ? undefined : TAP_BUTTON}
+                      className="rounded-full border border-[rgba(138,118,168,0.32)] bg-surface px-2 py-[3px] text-[9.5px] text-[#6d5a7d] transition-colors enabled:hover:border-[rgba(138,118,168,0.55)] enabled:hover:bg-[rgba(138,118,168,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
                       type="button"
-                      onClick={() => {
-                        refineControllerRef.current?.abort()
-                        refineControllerRef.current = null
-                        setRefining(false)
-                      }}
+                      disabled={refining || loading || healing}
+                      title={tag.instruction}
+                      onClick={() => void handleRefine(tag.instruction)}
                     >
-                      取消
-                    </button>
-                  )}
+                      {tag.label}
+                    </motion.button>
+                  ))}
                 </div>
-              </form>
-              <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
-                只发送当前 Schema、当前参数与本次指令；校验失败不会替换当前实验。
-              </p>
-            </div>
-          )}
+
+                <form className="flex flex-col gap-1.5" onSubmit={handleRefineSubmit}>
+                  <textarea
+                    className="resize-none rounded-[8px] border border-line bg-surface-soft px-2.5 py-[7px] text-[11px] leading-[1.55] text-ink placeholder:text-ink-faint focus:border-accent-line focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    rows={2}
+                    value={refineText}
+                    maxLength={MAX_PROMPT_LENGTH}
+                    disabled={refining}
+                    onChange={(event) => setRefineText(event.target.value)}
+                    placeholder="例如：把噪声强度做成可调滑块；用虚线对比理想轨迹…"
+                    aria-label="实验修改指令"
+                  />
+                  <div className="flex items-center gap-2">
+                    <motion.button
+                      whileTap={refining || loading || healing ? undefined : TAP_BUTTON}
+                      className="flex-1 rounded-lg border border-transparent bg-[#6d5a7d] px-3 py-[6px] text-[11px] font-semibold text-[#fbf7ef] transition-colors enabled:hover:bg-[#5d4b6c] disabled:cursor-not-allowed disabled:opacity-45"
+                      type="submit"
+                      disabled={refining || loading || healing}
+                    >
+                      {refining ? '应用中…' : '应用修改'}
+                    </motion.button>
+                    {refining && (
+                      <motion.button
+                        whileTap={TAP_BUTTON}
+                        className="rounded-lg border border-line bg-surface px-2.5 py-[6px] text-[11px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink"
+                        type="button"
+                        onClick={() => {
+                          refineControllerRef.current?.abort()
+                          refineControllerRef.current = null
+                          setRefining(false)
+                        }}
+                      >
+                        取消
+                      </motion.button>
+                    )}
+                  </div>
+                </form>
+                <p className="m-0 text-[9.5px] leading-[1.55] text-ink-faint">
+                  只发送当前 Schema、当前参数与本次指令；校验失败不会替换当前实验。
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
+      </div>
+
+      <div className="flex flex-none items-center border-t border-line px-2 py-2 max-[959px]:border-l max-[959px]:border-t-0 max-[959px]:py-0 max-[959px]:pl-2.5">
+        <motion.button
+          whileTap={TAP_BUTTON}
+          type="button"
+          onClick={() => onNavigate(isSettings ? 'workbench' : 'settings')}
+          aria-current={isSettings ? 'page' : undefined}
+          title={isSettings ? '返回工作台' : '打开设置 (/settings)'}
+          className={`flex w-full items-center justify-between gap-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
+            isSettings
+              ? 'border-accent-line bg-accent-soft text-accent-strong shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
+              : 'border-transparent bg-transparent text-ink-dim hover:border-line hover:bg-surface/80 hover:text-ink'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <SettingsIcon className="size-3.5 flex-none" />
+            <span>设置</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            {floatingBallOpen && (
+              <span
+                className="size-1.5 rounded-full bg-mint shadow-[0_0_0_2px_rgba(127,175,148,0.28)]"
+                title="悬浮球已开启"
+              />
+            )}
+            <span className="hidden font-mono text-[9px] text-ink-faint min-[960px]:inline">
+              /settings
+            </span>
+          </span>
+        </motion.button>
       </div>
 
       <div className="hidden h-[34px] flex-none items-center gap-2 border-t border-line px-3 text-[10px] text-ink-faint min-[960px]:flex">

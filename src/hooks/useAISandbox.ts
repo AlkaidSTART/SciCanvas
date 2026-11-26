@@ -52,8 +52,10 @@ export function useAISandbox(
     speedRef.current = speed
   }, [speed])
 
+  const usesSandbox = source === 'ai' && aiSpec?.renderType === 'canvas2d'
+
   useEffect(() => {
-    if (source !== 'ai' || !aiSpec) return undefined
+    if (!usesSandbox || !aiSpec || aiSpec.renderType !== 'canvas2d') return undefined
     const iframe = iframeRef.current
     if (!iframe) return undefined
 
@@ -171,20 +173,20 @@ export function useAISandbox(
       sendRef.current = () => {}
       retryRef.current = () => {}
     }
-  }, [aiSpec, iframeRef, markAiVersionGood, reloadKey, source, syncError, syncStatus])
+  }, [aiSpec, iframeRef, markAiVersionGood, reloadKey, syncError, syncStatus, usesSandbox])
 
   useEffect(() => {
-    if (source === 'ai') sendRef.current({ type: 'params', params })
-  }, [params, source])
+    if (usesSandbox) sendRef.current({ type: 'params', params })
+  }, [params, usesSandbox])
 
   useEffect(() => {
-    if (source === 'ai') sendRef.current({ type: 'speed', speed })
-  }, [speed, source])
+    if (usesSandbox) sendRef.current({ type: 'speed', speed })
+  }, [speed, usesSandbox])
 
   useEffect(() => {
-    if (source !== 'ai' || status === 'error') return
+    if (!usesSandbox || status === 'error') return
     sendRef.current({ type: status === 'running' ? 'play' : 'pause' })
-  }, [status, source])
+  }, [status, usesSandbox])
 
   const play = useCallback(() => {
     sendRef.current({ type: 'play' })

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { formatCapturedFormulaAppend } from './bridge'
+import { cleanCapturedFormulaText, formatCapturedFormulaAppend } from './bridge'
+
+describe('cleanCapturedFormulaText', () => {
+  it('cleans double-column PDF hard newlines and hyphenation while preserving math minus', () => {
+    const raw = 'damped oscil-\nlator:\r\n\\ddot{x} + 2\\zeta\\omega_0\\dot{x} -\n\\omega_0^2 x = 0\u200B'
+    expect(cleanCapturedFormulaText(raw)).toBe(
+      'damped oscillator: \\ddot{x} + 2\\zeta\\omega_0\\dot{x} - \\omega_0^2 x = 0',
+    )
+  })
+})
 
 describe('formatCapturedFormulaAppend', () => {
   it('inserts trimmed formula when existing prompt is empty', () => {

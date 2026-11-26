@@ -20,7 +20,8 @@ export const RECOGNITION_SYSTEM_PROMPT = `你是 SciCanvas 的论文截图识别
 2. 公式使用标准 LaTeX；多行公式用 \\\\ 换行，不要使用 Markdown 代码块。
 3. variables 最多 12 项，符号保持论文原样；看不清的符号放入 uncertain。
 4. confidence 为 0 到 1 的数字，表示整体识别置信度。
-5. 所有面向用户的文字使用简体中文。`
+5. 所有面向用户的文字使用简体中文。
+6. 若截图包含坐标系、曲线、光路或几何示意图，请在 description 中明确说明横纵坐标含义、关键曲线关系与重要特征标点（如极值点、交点、平衡点、焦点），便于后续直接生成 scene2d 交互图。`
 
 const RECOGNITION_INSTRUCTION = '识别这张论文截图，提取公式、变量与机理描述。'
 const DEFAULT_TIMEOUT_MS = 60_000

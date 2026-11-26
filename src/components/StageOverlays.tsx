@@ -1,5 +1,7 @@
+import { AnimatePresence, motion } from 'motion/react'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import type { TelemetryMetric, TelemetrySample } from '../types/experiment'
+import { FAST_TRANSITION, FLOAT_UP_VARIANTS } from './motion'
 
 function formatMetric(metric: TelemetryMetric, value: number): string {
   const text = value.toFixed(metric.precision ?? 2)
@@ -97,7 +99,11 @@ export function TelemetryOverlay() {
   const dockedOnDesktop = !presentation && rightPanelOpen
 
   return (
-    <div
+    <motion.div
+      key={`telemetry-${experiment.id}`}
+      variants={FLOAT_UP_VARIANTS}
+      initial="hidden"
+      animate="visible"
       className={`pointer-events-none absolute bottom-[18px] right-[18px] z-[5] w-[196px] rounded-xl border border-line bg-panel/88 px-3 pb-2.5 pt-2 shadow-[0_12px_28px_rgba(58,51,43,0.1)] backdrop-blur-md max-[640px]:hidden ${
         dockedOnDesktop ? 'min-[960px]:hidden' : ''
       }`}
@@ -116,7 +122,7 @@ export function TelemetryOverlay() {
       <p className="m-0 mt-1.5 border-t border-line pt-1.5 text-[9px] leading-none text-ink-faint">
         有界缓存 · 暂停后冻结采样
       </p>
-    </div>
+    </motion.div>
   )
 }
 
@@ -132,35 +138,47 @@ export function ProbeOverlay() {
 
   if (source === 'ai' || !definition) return null
 
-  if (!probe) {
-    return (
-      <div className="pointer-events-none absolute bottom-3 left-[18px] z-[5] rounded-full border border-line bg-panel/80 px-2.5 py-[5px] font-mono text-[9.5px] text-ink-faint backdrop-blur-sm max-[640px]:hidden">
-        {definition.hint ?? '悬停画布查看局部值'}
-      </div>
-    )
-  }
-
-  const left = `clamp(8px, ${probe.point.x + 16}px, calc(100% - 218px))`
-  const top = `clamp(8px, ${probe.point.y + 16}px, calc(100% - 108px))`
+  const left = probe ? `clamp(8px, ${probe.point.x + 16}px, calc(100% - 218px))` : undefined
+  const top = probe ? `clamp(8px, ${probe.point.y + 16}px, calc(100% - 108px))` : undefined
 
   return (
-    <div
-      className="pointer-events-none absolute z-[6] w-[202px] rounded-[10px] border border-line bg-panel/94 px-3 py-2 shadow-[0_10px_24px_rgba(58,51,43,0.14)] backdrop-blur-md"
-      style={{ left, top }}
-      role="status"
-    >
-      <div className="mb-1 font-mono text-[9.5px] text-ink-faint">{probe.reading.position}</div>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate text-[10.5px] text-ink-dim">{probe.reading.label}</span>
-        <span className="whitespace-nowrap font-mono text-[11px] font-semibold tabular-nums text-ink">
-          {probe.reading.value}
-        </span>
-      </div>
-      {probe.reading.detail && (
-        <div className="mt-1 border-t border-line pt-1 font-mono text-[9.5px] leading-[1.5] text-ink-faint">
-          {probe.reading.detail}
-        </div>
+    <AnimatePresence>
+      {!probe ? (
+        <motion.div
+          key="probe-hint"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          transition={FAST_TRANSITION}
+          className="pointer-events-none absolute bottom-3 left-[18px] z-[5] rounded-full border border-line bg-panel/80 px-2.5 py-[5px] font-mono text-[9.5px] text-ink-faint backdrop-blur-sm max-[640px]:hidden"
+        >
+          {definition.hint ?? '悬停画布查看局部值'}
+        </motion.div>
+      ) : (
+        <motion.div
+          key="probe-card"
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.96 }}
+          transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+          className="pointer-events-none absolute z-[6] w-[202px] rounded-[10px] border border-line bg-panel/94 px-3 py-2 shadow-[0_10px_24px_rgba(58,51,43,0.14)] backdrop-blur-md"
+          style={{ left, top }}
+          role="status"
+        >
+          <div className="mb-1 font-mono text-[9.5px] text-ink-faint">{probe.reading.position}</div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="min-w-0 truncate text-[10.5px] text-ink-dim">{probe.reading.label}</span>
+            <span className="whitespace-nowrap font-mono text-[11px] font-semibold tabular-nums text-ink">
+              {probe.reading.value}
+            </span>
+          </div>
+          {probe.reading.detail && (
+            <div className="mt-1 border-t border-line pt-1 font-mono text-[9.5px] leading-[1.5] text-ink-faint">
+              {probe.reading.detail}
+            </div>
+          )}
+        </motion.div>
       )}
-    </div>
+    </AnimatePresence>
   )
 }

@@ -144,3 +144,120 @@ describe('compileSimulationCode', () => {
     if (!compiled.ok) expect(compiled.message.length).toBeGreaterThan(0)
   })
 })
+
+export function makeScene2DSpec(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    title: '斜抛运动轨迹与能量标点分析',
+    domain: 'Physics / Mechanics',
+    formulaLatex: 'y(x) = x\\tan\\theta - \\frac{g x^2}{2 v_0^2 \\cos^2\\theta}',
+    insight: '拖动初速度与仰角，观察轨迹与最高点标点同步变化。',
+    renderType: 'scene2d',
+    controls: [
+      { type: 'slider', key: 'v0', label: '初速度', min: 8, max: 25, step: 0.5, default: 18, unit: 'm/s' },
+      { type: 'slider', key: 'deg', label: '仰角', min: 15, max: 75, step: 1, default: 45, unit: '°' },
+      { type: 'toggle', key: 'showVec', label: '速度矢量', default: true },
+    ],
+    legend: [{ label: '抛体轨迹', color: '#4F7292' }],
+    scene: {
+      coordinate: {
+        xDomain: [-2, 68],
+        yDomain: [-2, 34],
+        aspectMode: 'fit',
+        xLabel: 'x (m)',
+        yLabel: 'y (m)',
+      },
+      variables: {
+        rad: 'deg * pi / 180',
+        vx: 'v0 * cos(rad)',
+        vy0: 'v0 * sin(rad)',
+        xPeak: 'vx * vy0 / 9.8',
+        yPeak: 'vy0^2 / (2 * 9.8)',
+      },
+      elements: [
+        {
+          id: 'traj',
+          type: 'curve',
+          mode: 'explicit',
+          y: 'x * tan(rad) - (9.8 * x^2) / (2 * vx^2)',
+          xRange: [0, '2 * xPeak'],
+          stroke: 'blue',
+          lineWidth: 2.2,
+        },
+        {
+          id: 'peak',
+          type: 'point',
+          at: ['xPeak', 'yPeak'],
+          shape: 'diamond',
+          color: 'mint',
+          label: '最高点',
+          showCoords: true,
+        },
+        {
+          id: 'vel',
+          type: 'segment',
+          visible: 'showVec',
+          from: [0, 0],
+          to: ['vx * 0.4', 'vy0 * 0.4'],
+          arrow: 'end',
+          stroke: 'peach',
+        },
+        {
+          id: 'note',
+          type: 'annotation',
+          at: ['xPeak', 'yPeak + 2'],
+          text: '最大高度 {{yPeak}} m',
+          badge: true,
+        },
+      ],
+    },
+    ...overrides,
+  }
+}
+
+describe('validateGeneratedSpec (scene2d)', () => {
+  it('接受合法的 scene2d 声明式实验定义', () => {
+    const result = validateGeneratedSpec(makeScene2DSpec())
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.spec.renderType).toBe('scene2d')
+      if (result.spec.renderType === 'scene2d') {
+        expect(result.spec.scene.elements).toHaveLength(4)
+      }
+    }
+  })
+
+  it('拒绝表达式中引用未声明变量的 scene2d', () => {
+    const base = makeScene2DSpec()
+    const scene = base.scene as Record<string, unknown>
+    const result = validateGeneratedSpec({
+      ...base,
+      scene: {
+        ...scene,
+        variables: { bad: 'unknownVar + 1' },
+      },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.issues.join()).toContain('unknownVar')
+  })
+
+  it('拒绝非法坐标系范围与重复图元 id', () => {
+    const base = makeScene2DSpec()
+    const scene = base.scene as Record<string, unknown>
+    const result = validateGeneratedSpec({
+      ...base,
+      scene: {
+        ...scene,
+        coordinate: { xDomain: [10, 5], yDomain: [0, 10] },
+        elements: [
+          { id: 'dup', type: 'point', at: [0, 0], color: 'blue' },
+          { id: 'dup', type: 'point', at: [1, 1], color: 'peach' },
+        ],
+      },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.issues.join()).toContain('min < max')
+      expect(result.issues.join()).toContain('dup')
+    }
+  })
+})

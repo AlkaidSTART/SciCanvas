@@ -9,9 +9,12 @@ export interface PermissionStatus {
   supported: boolean
 }
 
+export type TextCaptureSource = 'ax' | 'clipboard'
+
 export interface TextCaptureOutcome {
   ok: boolean
   text: string | null
+  source?: TextCaptureSource | null
   needsPermission: string | null
   message: string | null
 }
@@ -27,6 +30,7 @@ export interface ImageCaptureOutcome {
 export interface CapturedFormulaPayload {
   kind: 'text' | 'image'
   content?: string | null
+  source?: TextCaptureSource | null
   dataUrl?: string | null
   name?: string | null
 }
@@ -92,6 +96,7 @@ export async function captureSelectedFormula(): Promise<TextCaptureOutcome> {
     return {
       ok: false,
       text: null,
+      source: null,
       needsPermission: null,
       message: '悬浮球取词功能需要在 SciCanvas 桌面端中使用。',
     }
@@ -141,6 +146,21 @@ export async function listenFloatingBallVisibility(
 }
 
 /**
+ * 清洗 PDF（尤其是双栏排版）划词/复制产生的断词连字符、硬回车与零宽字符，
+ * 同时保留数学公式中的二元减号（如 `a -\nb` -> `a - b`）。
+ */
+export function cleanCapturedFormulaText(rawFormula: string): string {
+  return rawFormula
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u00AD\u200B-\u200D\uFEFF]/g, '')
+    .replace(/([\p{L}])-\n[ \t]*/gu, '$1')
+    .replace(/\n+/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+/**
  * 将从论文中捕获的公式文本合并进现有对话框输入，保持整洁换行并不超过最大字数限制。
  */
 export function formatCapturedFormulaAppend(
@@ -148,7 +168,7 @@ export function formatCapturedFormulaAppend(
   rawFormula: string,
   maxLength: number,
 ): { nextPrompt: string; appended: boolean; truncated: boolean } {
-  const formula = rawFormula.trim()
+  const formula = cleanCapturedFormulaText(rawFormula)
   if (!formula) {
     return { nextPrompt: existingPrompt, appended: false, truncated: false }
   }

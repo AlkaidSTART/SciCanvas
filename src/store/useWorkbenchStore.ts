@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { MAX_HEAL_ATTEMPTS } from '../ai/heal'
 import type { GeneratedExperimentSpec } from '../ai/schema'
 import { DEFAULT_EXPERIMENT, getExperimentById } from '../experiments'
+import { compileScene2DExperiment } from '../runtime/scene2dRenderer'
 import type {
   ProbeReadout,
   RuntimeErrorInfo,
@@ -211,23 +212,26 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       : options?.recordId !== undefined
         ? options.recordId
         : workspaceRecordId
-    const experiment: ExperimentDefinition = {
-      id: 'ai-generated',
-      title: spec.title,
-      domain: spec.domain,
-      formulaLatex: spec.formulaLatex,
-      insight: spec.insight,
-      renderType: 'canvas2d',
-      controls: spec.controls,
-      ...(spec.legend ? { legend: spec.legend } : {}),
-      model: {
-        createState: () => {
-          throw new Error('AI 实验需在隔离沙盒中运行')
-        },
-        step: (state) => state,
-        draw: () => {},
-      },
-    }
+    const experiment: ExperimentDefinition =
+      spec.renderType === 'scene2d'
+        ? compileScene2DExperiment(spec, 'ai-generated')
+        : {
+            id: 'ai-generated',
+            title: spec.title,
+            domain: spec.domain,
+            formulaLatex: spec.formulaLatex,
+            insight: spec.insight,
+            renderType: 'canvas2d',
+            controls: spec.controls,
+            ...(spec.legend ? { legend: spec.legend } : {}),
+            model: {
+              createState: () => {
+                throw new Error('AI 实验需在隔离沙盒中运行')
+              },
+              step: (state) => state,
+              draw: () => {},
+            },
+          }
     set({
       experiment,
       source: 'ai',

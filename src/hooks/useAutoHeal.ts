@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { generateExperiment } from '../ai/client'
 import { runRepairLoop } from '../ai/heal'
 import { waitForSessionOutcome } from '../runtime/aiSessionBus'
+import { useSessionStore } from '../store/useSessionStore'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 
 const SESSION_TIMEOUT_MS = 8_000
@@ -39,8 +40,17 @@ export function useAutoHeal(): void {
           spec: aiSpec,
           error,
           shouldContinue: () => useWorkbenchStore.getState().source === 'ai',
-          requestRepair: (current, diagnostic) =>
-            generateExperiment(
+          requestRepair: async (current, diagnostic) => {
+            const sessionId = useSessionStore.getState().activeSessionId
+            if (sessionId) {
+              void useSessionStore.getState().recordMessage(sessionId, {
+                role: 'system',
+                mode: 'repair',
+                content: `自动修复第 ${diagnostic.attempt} 次（${diagnostic.stage}）：${diagnostic.message}`,
+                status: 'ok',
+              })
+            }
+            const repaired = await generateExperiment(
               {
                 prompt: REPAIR_INSTRUCTION,
                 mode: 'repair',
@@ -48,7 +58,18 @@ export function useAutoHeal(): void {
                 diagnostic,
               },
               { timeoutMs: 90_000 },
-            ),
+            )
+            if (sessionId) {
+              void useSessionStore.getState().recordGeneration(sessionId, {
+                mode: 'repair',
+                prompt: `${REPAIR_INSTRUCTION} [${diagnostic.stage}: ${diagnostic.message}]`,
+                spec: repaired,
+                params: useWorkbenchStore.getState().params,
+                assistantSummary: `第 ${diagnostic.attempt} 次自动修复已生成新版本「${repaired.title}」`,
+              })
+            }
+            return repaired
+          },
           runCandidate: async (candidate, attempt) => {
             const outcome = waitForSessionOutcome(SESSION_TIMEOUT_MS)
             useWorkbenchStore.getState().applyGeneratedExperiment(candidate)

@@ -26,6 +26,9 @@ describe('buildGenerationMessages', () => {
     expect(messages[1]).toEqual({ role: 'user', content: '模拟一个阻尼单摆' })
 
     const system = messages[0].content
+    expect(system).toContain('scene2d')
+    expect(system).toContain('公式场景建模 Skill')
+    expect(system).toContain('力学与波动场景')
     expect(system).toContain('simulationCode')
     expect(system).toContain('createState')
     expect(system).toContain('step')

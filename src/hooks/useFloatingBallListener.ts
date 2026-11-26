@@ -39,11 +39,13 @@ export function useFloatingBallListener() {
       if (payload.kind === 'text' && payload.content) {
         const { appended, truncated } = store.appendCapturedFormula(payload.content)
         if (appended) {
+          const sourceHint =
+            payload.source === 'clipboard' ? '（剪贴板已无损恢复）' : ''
           store.pushNotice(
             'success',
             truncated
-              ? '已将选中的公式加入对话框（超出字数上限的部分已截断）。'
-              : '已将选中的公式加入对话框。',
+              ? `已将选中的公式加入对话框${sourceHint}（超出字数上限的部分已截断）。`
+              : `已将选中的公式加入对话框${sourceHint}。`,
           )
         }
       } else if (payload.kind === 'image' && payload.dataUrl) {
