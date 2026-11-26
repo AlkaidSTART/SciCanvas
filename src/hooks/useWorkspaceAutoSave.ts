@@ -1,0 +1,95 @@
+import { useEffect } from 'react'
+import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import { useWorkspaceStore } from '../store/useWorkspaceStore'
+import { createWorkspaceAutoSaver } from '../workspace/autoSave'
+import { buildWorkspaceRecord, createWorkspaceRecordId } from '../workspace/records'
+
+/**
+ * 把工作台的变化同步为本地记录：
+ * 只订阅实验、来源、代码与参数，不接触遥测/探针，因此动画帧不会触发写库。
+ */
+export function useWorkspaceAutoSave(): void {
+  const hydrated = useWorkspaceStore((state) => state.hydrated)
+
+  useEffect(() => {
+    if (!hydrated) return undefined
+
+    const saver = createWorkspaceAutoSaver({
+      save: async (record) => {
+        const workspace = useWorkspaceStore.getState()
+        const workbench = useWorkbenchStore.getState()
+        const exists = workspace.entries.some((entry) => entry.id === record.id)
+        // 记录已被删除且不再是当前实验时，跳过错过的延迟写入，避免“复活”。
+        if (!exists && workbench.workspaceRecordId !== record.id) return
+        await workspace.saveRecord(record, { keepEdits: true })
+      },
+    })
+
+    const unsubscribe = useWorkbenchStore.subscribe((state, previous) => {
+      const changed =
+        state.experiment !== previous.experiment ||
+        state.source !== previous.source ||
+        state.aiSpec !== previous.aiSpec ||
+        state.params !== previous.params ||
+        state.speed !== previous.speed
+      if (!changed) return
+      if (state.source === 'ai' && !state.aiSpec) return
+
+      let recordId = state.workspaceRecordId
+      if (!recordId) {
+        if (state.source === 'preset') {
+          const existing = useWorkspaceStore
+            .getState()
+            .entries.find(
+              (entry) =>
+                entry.status !== 'unsupported' &&
+                entry.source === 'preset' &&
+                entry.experimentId === state.experiment.id,
+            )
+          recordId = existing?.id ?? createWorkspaceRecordId()
+        } else {
+          recordId = createWorkspaceRecordId()
+        }
+        // 先写回记录 ID，后续参数变化沿用同一条记录。
+        useWorkbenchStore.getState().setWorkspaceRecordId(recordId)
+      }
+
+      const existing = useWorkspaceStore
+        .getState()
+        .entries.find((entry) => entry.id === recordId)
+
+      const record = buildWorkspaceRecord({
+        id: recordId,
+        existing: existing ?? null,
+        source: state.source,
+        experimentId: state.experiment.id,
+        title: state.source === 'ai' ? (state.aiSpec?.title ?? state.experiment.title) : state.experiment.title,
+        domain: state.experiment.domain,
+        spec: state.aiSpec,
+        params: state.params,
+        speed: state.speed,
+      })
+
+      // 首次创建立即写入；参数拖动等后续变化合并后延迟写入。
+      saver.schedule(record, !existing)
+    })
+
+    const flush = () => {
+      void saver.flush()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      unsubscribe()
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      void saver.flush()
+      saver.dispose()
+    }
+  }, [hydrated])
+}

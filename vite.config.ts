@@ -3,6 +3,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import { defineConfig, loadEnv } from 'vite'
 import { aiProxyPlugin } from './server/aiProxy.ts'
+import { standalonePlayerPlugin } from './server/playerBundle.ts'
 
 const DEFAULT_TASK_TIMEOUT_MS = 45_000
 
@@ -17,10 +18,12 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       react(),
       babel({ presets: [reactCompilerPreset()] }),
+      standalonePlayerPlugin(),
       aiProxyPlugin({
         apiKey: env.AI_API_KEY,
         baseUrl: env.AI_BASE_URL || 'https://api.openai.com/v1',
         model: env.AI_MODEL || 'gpt-4o-mini',
+        visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-4o-mini',
         timeoutMs:
           Number.isFinite(timeoutMs) && timeoutMs > 0
             ? timeoutMs

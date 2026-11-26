@@ -9,11 +9,14 @@ import type { GenerationMode, RepairDiagnostic } from '../src/ai/prompt.ts'
 import { validateGeneratedSpec } from '../src/ai/schema.ts'
 import type { GeneratedExperimentSpec } from '../src/ai/schema.ts'
 import type { ControlValue } from '../src/types/experiment.ts'
+import { extractContent, isRecord, parseModelJson } from './modelText.ts'
 
 export interface AiServerConfig {
   apiKey?: string
   baseUrl: string
   model: string
+  /** 多模态识别使用的模型；缺省时回退到 model。 */
+  visionModel?: string
   timeoutMs: number
   fetchImpl?: typeof fetch
 }
@@ -45,41 +48,6 @@ function failure(status: number, code: AiErrorCode, message?: string): GenerateR
     status,
     body: { ok: false, error: { code, message: message ?? AI_ERROR_MESSAGES[code] } },
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** 兼容字符串内容与分段内容（部分 OpenAI 兼容服务返回数组）。 */
-function extractContent(payload: unknown): string | null {
-  if (!isRecord(payload) || !Array.isArray(payload.choices) || payload.choices.length === 0) {
-    return null
-  }
-  const choice = payload.choices[0]
-  if (!isRecord(choice) || !isRecord(choice.message)) return null
-  const content = choice.message.content
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => (isRecord(part) && typeof part.text === 'string' ? part.text : ''))
-      .join('')
-    return text.length > 0 ? text : null
-  }
-  return null
-}
-
-/** 去掉模型偶尔附带的 Markdown 代码围栏或前后解释文字。 */
-function parseModelJson(content: string): unknown {
-  let text = content.trim()
-  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
-  if (fenced) text = fenced[1].trim()
-  if (!text.startsWith('{')) {
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    if (start >= 0 && end > start) text = text.slice(start, end + 1)
-  }
-  return JSON.parse(text)
 }
 
 const MODES: readonly GenerationMode[] = ['create', 'refine', 'repair']

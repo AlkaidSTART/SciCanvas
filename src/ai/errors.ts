@@ -8,6 +8,8 @@ export type AiErrorCode =
   | 'schema_invalid'
   | 'server_error'
   | 'bad_request'
+  | 'image_invalid'
+  | 'image_too_large'
 
 export const AI_ERROR_MESSAGES: Record<AiErrorCode, string> = {
   aborted: '已取消生成',
@@ -19,4 +21,6 @@ export const AI_ERROR_MESSAGES: Record<AiErrorCode, string> = {
   schema_invalid: '模型输出未通过结构校验，请调整描述后重试',
   server_error: '生成服务暂时不可用，请稍后重试',
   bad_request: '请求不合法，请检查输入后重试',
+  image_invalid: '图片格式不受支持，请使用 PNG、JPEG 或 WebP',
+  image_too_large: '图片过大，请压缩到 4 MB 以内',
 }

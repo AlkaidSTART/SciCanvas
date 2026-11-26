@@ -37,6 +37,8 @@ beforeEach(() => {
     aiSpec: null,
     lastGoodAi: null,
     heal: { status: 'idle', attempt: 0, maxAttempts: 2, message: '', failed: null },
+    presentation: false,
+    workspaceRecordId: null,
   })
 })
 
@@ -103,8 +105,7 @@ describe('案例切换', () => {
   })
 })
 
-describe('M5 边界态与探索状态', () => {
-  it('边界态一次性写入声明的参数并请求重置', () => {
+describe('M5 边界态与探索状态', () => {  it('边界态一次性写入声明的参数并请求重置', () => {
     const corner = DEFAULT_EXPERIMENT.cornerCases?.[0]
     expect(corner).toBeDefined()
     if (!corner) return
@@ -324,5 +325,85 @@ describe('可用版本保护与自动修复状态', () => {
     expect(state.status).toBe('running')
     expect(state.error).toBeNull()
     expect(state.heal.status).toBe('idle')
+  })
+})
+
+describe('M6 演示模式', () => {
+  it('进入与退出演示模式不会改变当前实验、参数和运行态', () => {
+    const preset = EXPERIMENTS[1]
+    useWorkbenchStore.getState().selectExperiment(preset.id)
+    useWorkbenchStore.getState().setParam(preset.controls[0].key, 0.001)
+    useWorkbenchStore.getState().setSpeed(2)
+    useWorkbenchStore.getState().syncStatus('paused')
+    const before = useWorkbenchStore.getState()
+
+    useWorkbenchStore.getState().enterPresentation()
+    const presenting = useWorkbenchStore.getState()
+    expect(presenting.presentation).toBe(true)
+    expect(presenting.experiment).toBe(before.experiment)
+    expect(presenting.params).toBe(before.params)
+    expect(presenting.speed).toBe(before.speed)
+    expect(presenting.status).toBe('paused')
+    expect(presenting.reloadKey).toBe(before.reloadKey)
+    expect(presenting.restartKey).toBe(before.restartKey)
+
+    useWorkbenchStore.getState().exitPresentation()
+    const after = useWorkbenchStore.getState()
+    expect(after.presentation).toBe(false)
+    expect(after.experiment).toBe(before.experiment)
+    expect(after.params).toBe(before.params)
+    expect(after.reloadKey).toBe(before.reloadKey)
+  })
+
+  it('AI 实验进入演示模式后仍保留生成版本', () => {
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec)
+    const before = useWorkbenchStore.getState()
+    useWorkbenchStore.getState().enterPresentation()
+    const state = useWorkbenchStore.getState()
+    expect(state.presentation).toBe(true)
+    expect(state.source).toBe('ai')
+    expect(state.aiSpec).toBe(aiSpec)
+    expect(state.reloadKey).toBe(before.reloadKey)
+  })
+})
+
+describe('M7 本地记录归属', () => {
+  it('切换预设会清除记录 ID，从工作区加载时使用指定 ID', () => {
+    useWorkbenchStore.getState().setWorkspaceRecordId('record-1')
+    useWorkbenchStore.getState().selectExperiment(EXPERIMENTS[0].id)
+    expect(useWorkbenchStore.getState().workspaceRecordId).toBeNull()
+
+    useWorkbenchStore.getState().selectExperiment(EXPERIMENTS[1].id, { recordId: 'record-2' })
+    expect(useWorkbenchStore.getState().workspaceRecordId).toBe('record-2')
+  })
+
+  it('AI 微调与修复沿用当前记录，新生成才另起一条', () => {
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec, undefined, {
+      recordId: 'record-3',
+    })
+    expect(useWorkbenchStore.getState().workspaceRecordId).toBe('record-3')
+
+    const refined: GeneratedExperimentSpec = { ...aiSpec, title: 'AI 谐振子（微调）' }
+    useWorkbenchStore.getState().applyGeneratedExperiment(refined)
+    expect(useWorkbenchStore.getState().workspaceRecordId).toBe('record-3')
+
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec, undefined, { newRecord: true })
+    expect(useWorkbenchStore.getState().workspaceRecordId).toBeNull()
+  })
+
+  it('从工作区批量恢复参数会按当前实验控件清洗', () => {
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec)
+    useWorkbenchStore.getState().setParams({ stiffness: 99, unknown: 'x' })
+    const params = useWorkbenchStore.getState().params
+    expect(params.stiffness).toBe(2)
+    expect(params.unknown).toBeUndefined()
+  })
+
+  it('回到默认实验会断开记录归属', () => {
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec, undefined, {
+      recordId: 'record-4',
+    })
+    useWorkbenchStore.getState().resetToDefault()
+    expect(useWorkbenchStore.getState().workspaceRecordId).toBeNull()
   })
 })

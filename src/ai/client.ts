@@ -1,12 +1,16 @@
 import type { ControlValue } from '../types/experiment'
 import { AI_ERROR_MESSAGES } from './errors'
 import type { AiErrorCode } from './errors'
+import { validateImageDataUrl } from './image'
 import { DEFAULT_REPAIR_INSTRUCTION, MAX_PROMPT_LENGTH } from './prompt'
 import type { GenerationMode, RepairDiagnostic } from './prompt'
+import { normalizeRecognition } from './recognition'
+import type { RecognitionResult } from './recognition'
 import { validateGeneratedSpec } from './schema'
 import type { GeneratedExperimentSpec } from './schema'
 
 export type { AiErrorCode } from './errors'
+export type { RecognitionResult, RecognitionVariable } from './recognition'
 
 export const DEFAULT_CLIENT_TIMEOUT_MS = 60_000
 
@@ -61,6 +65,63 @@ function readServerError(payload: unknown): { code?: AiErrorCode; message?: stri
   }
 }
 
+/** 与服务端代理通信的统一入口：超时、取消、HTTP 与网络错误都转为稳定 code。 */
+async function postJson(
+  path: string,
+  body: unknown,
+  options: GenerateExperimentOptions,
+): Promise<Record<string, unknown>> {
+  if (options.signal?.aborted) throw new AiGenerationError('aborted')
+
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS)
+  const abortFromCaller = () => controller.abort()
+  options.signal?.addEventListener('abort', abortFromCaller)
+
+  try {
+    const fetchImpl = options.fetchImpl ?? fetch
+    const response = await fetchImpl(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+
+    let payload: unknown = null
+    try {
+      payload = await response.json()
+    } catch {
+      payload = null
+    }
+
+    if (!response.ok) {
+      const serverError = readServerError(payload)
+      throw new AiGenerationError(
+        serverError.code ?? codeFromStatus(response.status),
+        serverError.message,
+      )
+    }
+    if (payload === null) throw new AiGenerationError('invalid_json')
+    if (!isRecord(payload) || payload.ok !== true) {
+      const serverError = readServerError(payload)
+      throw new AiGenerationError(serverError.code ?? 'invalid_json', serverError.message)
+    }
+    return payload
+  } catch (error) {
+    if (error instanceof AiGenerationError) throw error
+    if (options.signal?.aborted) throw new AiGenerationError('aborted')
+    if (timedOut) throw new AiGenerationError('timeout')
+    throw new AiGenerationError('network')
+  } finally {
+    clearTimeout(timeout)
+    options.signal?.removeEventListener('abort', abortFromCaller)
+  }
+}
+
 function buildRequestBody(input: string | GenerateExperimentRequest): Record<string, unknown> {
   const request: GenerateExperimentRequest = typeof input === 'string' ? { prompt: input } : input
   const mode = request.mode ?? 'create'
@@ -102,61 +163,38 @@ export async function generateExperiment(
   if (text.length > MAX_PROMPT_LENGTH) {
     throw new AiGenerationError('bad_request', `描述不能超过 ${MAX_PROMPT_LENGTH} 个字符`)
   }
-  if (options.signal?.aborted) throw new AiGenerationError('aborted')
 
-  const controller = new AbortController()
-  let timedOut = false
-  const timeout = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS)
-  const abortFromCaller = () => controller.abort()
-  options.signal?.addEventListener('abort', abortFromCaller)
-
-  try {
-    const fetchImpl = options.fetchImpl ?? fetch
-    const response = await fetchImpl('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildRequestBody(input)),
-      signal: controller.signal,
-    })
-
-    let payload: unknown = null
-    try {
-      payload = await response.json()
-    } catch {
-      payload = null
-    }
-
-    if (!response.ok) {
-      const serverError = readServerError(payload)
-      throw new AiGenerationError(
-        serverError.code ?? codeFromStatus(response.status),
-        serverError.message,
-      )
-    }
-    if (payload === null) throw new AiGenerationError('invalid_json')
-    if (!isRecord(payload) || payload.ok !== true) {
-      const serverError = readServerError(payload)
-      throw new AiGenerationError(serverError.code ?? 'invalid_json', serverError.message)
-    }
-
-    const validation = validateGeneratedSpec(payload.spec)
-    if (!validation.ok) {
-      throw new AiGenerationError(
-        'schema_invalid',
-        `模型输出未通过校验：${validation.issues.slice(0, 2).join('；')}`,
-      )
-    }
-    return validation.spec
-  } catch (error) {
-    if (error instanceof AiGenerationError) throw error
-    if (options.signal?.aborted) throw new AiGenerationError('aborted')
-    if (timedOut) throw new AiGenerationError('timeout')
-    throw new AiGenerationError('network')
-  } finally {
-    clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', abortFromCaller)
+  const payload = await postJson('/api/generate', buildRequestBody(input), options)
+  const validation = validateGeneratedSpec(payload.spec)
+  if (!validation.ok) {
+    throw new AiGenerationError(
+      'schema_invalid',
+      `模型输出未通过校验：${validation.issues.slice(0, 2).join('；')}`,
+    )
   }
+  return validation.spec
+}
+
+/**
+ * 论文截图识别：图片只发送到服务端代理，由服务端使用多模态模型识别。
+ * 识别结果仍需通过客户端结构校验，确认编辑后再走 generateExperiment。
+ */
+export async function recognizeImage(
+  image: string,
+  options: GenerateExperimentOptions = {},
+): Promise<RecognitionResult> {
+  const imageValidation = validateImageDataUrl(image)
+  if (!imageValidation.ok) {
+    throw new AiGenerationError(imageValidation.code, imageValidation.message)
+  }
+
+  const payload = await postJson('/api/recognize', { image }, options)
+  const validation = normalizeRecognition(payload.recognition)
+  if (!validation.ok) {
+    throw new AiGenerationError(
+      'schema_invalid',
+      `识别结果未通过校验：${validation.issues.slice(0, 2).join('；')}`,
+    )
+  }
+  return validation.result
 }

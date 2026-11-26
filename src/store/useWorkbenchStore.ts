@@ -65,10 +65,21 @@ interface WorkbenchState {
   lastGoodAi: AiVersionSnapshot | null
   /** 自动修复的可视化状态。 */
   heal: HealState
+  /** 演示模式仅改变布局，不触碰当前实验与运行状态。 */
+  presentation: boolean
+  /** 当前实验对应的本地记录 ID；null 表示尚未保存，由自动保存创建。 */
+  workspaceRecordId: string | null
+  enterPresentation: () => void
+  exitPresentation: () => void
   setParam: (key: string, value: ControlValue) => void
+  setParams: (params: ParamValues) => void
   setSpeed: (speed: number) => void
-  selectExperiment: (id: string) => void
-  applyGeneratedExperiment: (spec: GeneratedExperimentSpec, params?: ParamValues) => void
+  selectExperiment: (id: string, options?: { recordId?: string | null }) => void
+  applyGeneratedExperiment: (
+    spec: GeneratedExperimentSpec,
+    params?: ParamValues,
+    options?: { newRecord?: boolean; recordId?: string | null },
+  ) => void
   /** 原子应用实验声明的边界态参数，并请求运行时重置后继续播放。 */
   applyCornerCase: (id: string) => void
   syncStatus: (status: RuntimeStatus) => void
@@ -76,6 +87,7 @@ interface WorkbenchState {
   syncTelemetry: (samples: TelemetrySample[]) => void
   syncProbe: (readout: ProbeReadout | null) => void
   resetToDefault: () => void
+  setWorkspaceRecordId: (id: string | null) => void
   markAiVersionGood: () => void
   restoreLastGoodAi: () => boolean
   setHealRequesting: (attempt: number) => void
@@ -104,22 +116,36 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
   aiSpec: null,
   lastGoodAi: null,
   heal: createInitialHeal(),
+  presentation: false,
+  workspaceRecordId: null,
+
+  enterPresentation: () => set({ presentation: true }),
+
+  exitPresentation: () => set({ presentation: false }),
 
   setParam: (key, value) => {
     const { experiment, params } = get()
     set({ params: sanitizeParams(experiment, { ...params, [key]: value }) })
   },
 
+  setParams: (params) => {
+    const { experiment } = get()
+    set({ params: sanitizeParams(experiment, params) })
+  },
+
   setSpeed: (speed) => set({ speed }),
+
+  setWorkspaceRecordId: (id) => set({ workspaceRecordId: id }),
 
   /**
    * 切换案例时一次性替换实验、参数与运行态：
    * reloadKey 自增让 useExperimentRuntime 销毁旧运行时并按新案例默认参数重建。
    */
-  selectExperiment: (id) => {
+  selectExperiment: (id, options) => {
     const { experiment, reloadKey } = get()
     const next = getExperimentById(id)
     if (!next) return
+    const workspaceRecordId = options?.recordId ?? null
     if (next.id === experiment.id) {
       set({
         params: createDefaultParams(next),
@@ -132,6 +158,7 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
         aiSpec: null,
         lastGoodAi: null,
         heal: createInitialHeal(),
+        workspaceRecordId,
         reloadKey: reloadKey + 1,
       })
       return
@@ -148,6 +175,7 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       aiSpec: null,
       lastGoodAi: null,
       heal: createInitialHeal(),
+      workspaceRecordId,
       reloadKey: reloadKey + 1,
     })
   },
@@ -157,8 +185,14 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
    * 由隔离 iframe 沙盒执行，主线程运行时不会调用这里。
    * lastGoodAi 保留不变，便于修复失败时恢复上一可用版本。
    */
-  applyGeneratedExperiment: (spec, params) => {
-    const { reloadKey } = get()
+  applyGeneratedExperiment: (spec, params, options) => {
+    const { reloadKey, workspaceRecordId } = get()
+    // 微调、修复与恢复默认沿用当前记录；只有新生成才另起一条记录。
+    const nextRecordId = options?.newRecord
+      ? null
+      : options?.recordId !== undefined
+        ? options.recordId
+        : workspaceRecordId
     const experiment: ExperimentDefinition = {
       id: 'ai-generated',
       title: spec.title,
@@ -189,6 +223,7 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       telemetry: [],
       probe: null,
       heal: createInitialHeal(),
+      workspaceRecordId: nextRecordId,
       reloadKey: reloadKey + 1,
     })
   },
@@ -236,6 +271,7 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       aiSpec: null,
       lastGoodAi: null,
       heal: createInitialHeal(),
+      workspaceRecordId: null,
       reloadKey: reloadKey + 1,
     })
   },

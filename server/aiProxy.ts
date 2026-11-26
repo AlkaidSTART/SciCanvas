@@ -1,19 +1,26 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
+import { MAX_IMAGE_BYTES } from '../src/ai/image.ts'
 import type { AiServerConfig } from './generate.ts'
 import { generateExperiment } from './generate.ts'
+import { recognizePaperImage } from './recognize.ts'
 
 /** 微调/修复请求会携带当前实验的完整 schema（含仿真代码），因此放宽到 64KB。 */
-const MAX_BODY_BYTES = 64 * 1024
+const MAX_GENERATE_BODY_BYTES = 64 * 1024
+/** 图片 data URL 约为原始字节的 4/3，额外留出 JSON 包装空间。 */
+const MAX_RECOGNIZE_BODY_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 64 * 1024
 const RATE_LIMIT_WINDOW_MS = 60_000
 const RATE_LIMIT_MAX = 10
+const RECOGNIZE_RATE_LIMIT_MAX = 6
 
 const hits = new Map<string, number[]>()
 
-function isRateLimited(key: string): boolean {
+type Route = 'generate' | 'recognize'
+
+function isRateLimited(key: string, max: number): boolean {
   const now = Date.now()
   const recent = (hits.get(key) ?? []).filter((time) => now - time < RATE_LIMIT_WINDOW_MS)
-  if (recent.length >= RATE_LIMIT_MAX) {
+  if (recent.length >= max) {
     hits.set(key, recent)
     return true
   }
@@ -77,7 +84,13 @@ function createMiddleware(config: AiServerConfig) {
     next: (error?: unknown) => void,
   ): void => {
     const pathname = (req.url ?? '').split('?')[0]
-    if (pathname !== '/api/generate') {
+    const route: Route | null =
+      pathname === '/api/generate'
+        ? 'generate'
+        : pathname === '/api/recognize'
+          ? 'recognize'
+          : null
+    if (!route) {
       next()
       return
     }
@@ -93,7 +106,8 @@ function createMiddleware(config: AiServerConfig) {
       }
 
       const address = req.socket.remoteAddress ?? 'unknown'
-      if (isRateLimited(address)) {
+      const rateLimitMax = route === 'recognize' ? RECOGNIZE_RATE_LIMIT_MAX : RATE_LIMIT_MAX
+      if (isRateLimited(`${route}:${address}`, rateLimitMax)) {
         sendJson(res, 429, {
           ok: false,
           error: { code: 'rate_limit', message: '请求过于频繁，请稍后再试' },
@@ -103,13 +117,19 @@ function createMiddleware(config: AiServerConfig) {
 
       let body: unknown
       try {
-        body = await readJsonBody(req, MAX_BODY_BYTES)
+        body = await readJsonBody(
+          req,
+          route === 'recognize' ? MAX_RECOGNIZE_BODY_BYTES : MAX_GENERATE_BODY_BYTES,
+        )
       } catch (error) {
         const code = (error as BodyError).code
         if (code === 'payload_too_large') {
           sendJson(res, 413, {
             ok: false,
-            error: { code: 'bad_request', message: '请求体过大' },
+            error:
+              route === 'recognize'
+                ? { code: 'image_too_large', message: '图片过大，请压缩到 4 MB 以内' }
+                : { code: 'bad_request', message: '请求体过大' },
           })
         } else {
           sendJson(res, 400, {
@@ -120,7 +140,10 @@ function createMiddleware(config: AiServerConfig) {
         return
       }
 
-      const result = await generateExperiment(body, config)
+      const result =
+        route === 'recognize'
+          ? await recognizePaperImage(body, config)
+          : await generateExperiment(body, config)
       sendJson(res, result.status, result.body)
     })().catch(() => {
       if (!res.headersSent) {

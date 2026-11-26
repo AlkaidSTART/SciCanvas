@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AiGenerationError, generateExperiment } from './client'
+import { AiGenerationError, generateExperiment, recognizeImage } from './client'
 import type { GeneratedExperimentSpec } from './schema'
 
 const validSpec: GeneratedExperimentSpec = {
@@ -211,5 +211,81 @@ describe('增量修改与修复请求', () => {
         { fetchImpl },
       ),
     ).rejects.toMatchObject({ code: 'schema_invalid' })
+  })
+})
+
+const tinyPng =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+
+describe('recognizeImage', () => {
+  it('只把图片 data URL 发送到识别代理并校验结果', async () => {
+    let body: Record<string, unknown> = {}
+    const calls: Array<RequestInfo | URL> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(url)
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse({
+        ok: true,
+        recognition: {
+          formulaLatex: 'E=mc^2',
+          description: '质能方程',
+          variables: [{ symbol: 'E', meaning: '能量' }],
+          uncertain: [],
+          confidence: 0.9,
+        },
+      })
+    }) as typeof fetch
+
+    const result = await recognizeImage(tinyPng, { fetchImpl })
+
+    expect(result.formulaLatex).toBe('E=mc^2')
+    expect(result.variables).toEqual([{ symbol: 'E', meaning: '能量' }])
+    expect(calls).toEqual(['/api/recognize'])
+    expect(body).toEqual({ image: tinyPng })
+    expect(String(JSON.stringify(body))).not.toContain('sk-')
+  })
+
+  it('不支持的图片在本地拦截，不发起请求', async () => {
+    const fetchImpl = vi.fn()
+    await expect(
+      recognizeImage('data:image/gif;base64,R0lGODlhAQABAAAAACw=', {
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    ).rejects.toMatchObject({ code: 'image_invalid' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('映射服务端的图片过大与限额错误', async () => {
+    const tooLarge = vi.fn(async () =>
+      jsonResponse(
+        { ok: false, error: { code: 'image_too_large', message: '图片过大，请压缩到 4 MB 以内' } },
+        413,
+      ),
+    )
+    await expect(
+      recognizeImage(tinyPng, { fetchImpl: tooLarge as unknown as typeof fetch }),
+    ).rejects.toMatchObject({ code: 'image_too_large' })
+
+    const limited = vi.fn(async () => brokenResponse(429))
+    await expect(
+      recognizeImage(tinyPng, { fetchImpl: limited as unknown as typeof fetch }),
+    ).rejects.toMatchObject({ code: 'rate_limit' })
+  })
+
+  it('识别结果不符合协议时返回 schema_invalid', async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({ ok: true, recognition: { formulaLatex: ' ', description: ' ' } })) as typeof fetch
+    await expect(recognizeImage(tinyPng, { fetchImpl })).rejects.toMatchObject({
+      code: 'schema_invalid',
+    })
+  })
+
+  it('网络失败返回 network', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+    await expect(
+      recognizeImage(tinyPng, { fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).rejects.toMatchObject({ code: 'network' })
   })
 })

@@ -5,6 +5,7 @@ import { MAX_PROMPT_LENGTH } from '../ai/prompt'
 import { EXPERIMENTS } from '../experiments'
 import type { RuntimeStatus } from '../runtime/CanvasRuntime'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
+import { PaperImageInput } from './PaperImageInput'
 
 const STATUS_LABEL: Record<RuntimeStatus, string> = {
   running: '运行中',
@@ -47,6 +48,7 @@ export function SidePanel() {
   const source = useWorkbenchStore((state) => state.source)
   const aiSpec = useWorkbenchStore((state) => state.aiSpec)
   const healStatus = useWorkbenchStore((state) => state.heal.status)
+  const presentation = useWorkbenchStore((state) => state.presentation)
   const healing = healStatus === 'requesting' || healStatus === 'applied'
   const selectExperiment = useWorkbenchStore((state) => state.selectExperiment)
   const applyGeneratedExperiment = useWorkbenchStore((state) => state.applyGeneratedExperiment)
@@ -83,7 +85,7 @@ export function SidePanel() {
     setAiError(null)
     try {
       const spec = await generateExperiment(text, { signal: controller.signal })
-      applyGeneratedExperiment(spec)
+      applyGeneratedExperiment(spec, undefined, { newRecord: true })
     } catch (error) {
       if (!controller.signal.aborted) {
         setAiError(error instanceof Error ? error.message : '生成失败，请稍后重试')
@@ -144,7 +146,12 @@ export function SidePanel() {
   }
 
   return (
-    <aside className="preset-scroll flex flex-col gap-6 overflow-y-auto border-r border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] px-4 py-[18px] max-[980px]:flex-row max-[980px]:items-stretch max-[980px]:gap-3.5 max-[980px]:overflow-x-auto max-[980px]:overflow-y-hidden max-[980px]:border-b max-[980px]:border-r-0 max-[980px]:px-3 max-[980px]:py-2.5">
+    <aside
+      className={`preset-scroll ${
+        presentation ? 'hidden' : 'flex'
+      } flex-col gap-6 overflow-y-auto border-r border-line bg-[linear-gradient(180deg,#fcf9f2,#f7f1e7)] px-4 py-[18px] max-[980px]:flex-row max-[980px]:items-stretch max-[980px]:gap-3.5 max-[980px]:overflow-x-auto max-[980px]:overflow-y-hidden max-[980px]:border-b max-[980px]:border-r-0 max-[980px]:px-3 max-[980px]:py-2.5`}
+      aria-hidden={presentation || undefined}
+    >
       <section className="flex flex-col gap-2.5 max-[980px]:min-w-[230px] max-[980px]:flex-none">
         <h2 className="m-0 flex items-center justify-between gap-2 text-[10.5px] font-semibold uppercase tracking-[0.13em] text-ink-faint">
           预设实验
@@ -211,6 +218,8 @@ export function SidePanel() {
             </span>
           </div>
         )}
+
+        <PaperImageInput />
 
         <form className="flex flex-col gap-2" onSubmit={handleSubmit}>
           <textarea
