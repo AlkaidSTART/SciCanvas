@@ -157,25 +157,31 @@ describe('createSqliteSessionStore', () => {
     const dbFile = join(dir, 'models.db')
 
     const store1 = createSqliteSessionStore(dbFile)
-    expect(store1.listLlmEndpoints()).toEqual([])
+    const presets = store1.listLlmEndpoints()
+    expect(presets.length).toBeGreaterThanOrEqual(5)
+    expect(presets.map((p) => p.providerId)).toEqual(
+      expect.arrayContaining(['deepseek', 'doubao', 'qwen', 'openai', 'anthropic']),
+    )
     expect(store1.getActiveLlmEndpoint()).toBeNull()
 
-    // 添加第一个自定义端点并激活
-    const first = store1.upsertLlmEndpoint({
+    // 更新预设 DeepSeek 的 API Key 并激活
+    const updatedDeepseek = store1.upsertLlmEndpoint({
+      id: 'preset-deepseek',
       name: 'DeepSeek',
+      providerId: 'deepseek',
+      isPreset: true,
+      isActive: true,
       baseUrl: 'https://api.deepseek.com/v1',
       apiKey: 'sk-deepseek-secret-1234',
       model: 'deepseek-reasoner',
       visionModel: '',
       apiFormat: 'chat',
-      isActive: true,
     })
-    expect(first.isPreset).toBe(false)
-    expect(first.isActive).toBe(true)
-    expect(first.apiKey).toBe('sk-deepseek-secret-1234')
-    expect(first.model).toBe('deepseek-reasoner')
+    expect(updatedDeepseek.isActive).toBe(true)
+    expect(updatedDeepseek.apiKey).toBe('sk-deepseek-secret-1234')
+    expect(updatedDeepseek.model).toBe('deepseek-reasoner')
 
-    // 添加第二个自定义端点（Anthropic 格式）并切换为激活状态
+    // 添加自定义端点（Anthropic 格式）并切换为激活状态
     const custom = store1.upsertLlmEndpoint({
       name: '我的 Claude 代理',
       baseUrl: 'https://claude.proxy.example/v1',
@@ -188,7 +194,7 @@ describe('createSqliteSessionStore', () => {
     expect(custom.isPreset).toBe(false)
     expect(custom.isActive).toBe(true)
     expect(custom.apiFormat).toBe('anthropic')
-    expect(store1.getLlmEndpoint(first.id)?.isActive).toBe(false)
+    expect(store1.getLlmEndpoint('preset-deepseek')?.isActive).toBe(false)
     expect(store1.getActiveLlmEndpoint()?.id).toBe(custom.id)
     store1.close()
 
@@ -200,19 +206,22 @@ describe('createSqliteSessionStore', () => {
       expect(active?.apiKey).toBe('sk-ant-custom-9999')
       expect(active?.apiFormat).toBe('anthropic')
 
-      const savedFirst = store2.getLlmEndpoint(first.id)
-      expect(savedFirst?.apiKey).toBe('sk-deepseek-secret-1234')
-      expect(savedFirst?.model).toBe('deepseek-reasoner')
+      const deepseek = store2.getLlmEndpoint('preset-deepseek')
+      expect(deepseek?.apiKey).toBe('sk-deepseek-secret-1234')
+      expect(deepseek?.model).toBe('deepseek-reasoner')
 
-      // 添加 response 格式端点并切换激活
-      const doubao = store2.upsertLlmEndpoint({
+      // 切换激活端点为豆包并修改为 response 格式
+      store2.upsertLlmEndpoint({
+        id: 'preset-doubao',
         name: '豆包 (Doubao)',
+        providerId: 'doubao',
+        isPreset: true,
         baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
         apiKey: 'ark-key-5678',
         model: 'doubao-seed-1-6-250615',
         apiFormat: 'response',
       })
-      const activatedDoubao = store2.setActiveLlmEndpoint(doubao.id)
+      const activatedDoubao = store2.setActiveLlmEndpoint('preset-doubao')
       expect(activatedDoubao?.isActive).toBe(true)
       expect(activatedDoubao?.apiFormat).toBe('response')
       expect(store2.getLlmEndpoint(custom.id)?.isActive).toBe(false)
