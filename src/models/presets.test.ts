@@ -47,4 +47,18 @@ describe('LLM presets and validation', () => {
     })
     expect(badFormat.ok).toBe(false)
   })
+
+  it('allows empty model name when configuring an endpoint', () => {
+    const valid = validateLlmEndpointInput({
+      name: '自定义网关',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'sk-custom',
+      model: '',
+      apiFormat: 'chat',
+    })
+    expect(valid.ok).toBe(true)
+    if (valid.ok) {
+      expect(valid.value.model).toBe('')
+    }
+  })
 })

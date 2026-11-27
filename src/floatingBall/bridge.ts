@@ -122,6 +122,15 @@ export async function resizeCurrentWindow(width: number, height: number): Promis
   await getCurrentWindow().setSize(new LogicalSize(width, height))
 }
 
+export async function setFloatingBallExpanded(
+  expanded: boolean,
+  width: number,
+  height: number,
+): Promise<void> {
+  if (!isDesktopApp()) return
+  await invoke('floating_ball_set_expanded', { expanded, width, height })
+}
+
 export async function startCurrentWindowDragging(): Promise<void> {
   if (!isDesktopApp()) return
   await getCurrentWindow().startDragging()

@@ -18,6 +18,14 @@ import type {
 
 export type ExperimentSource = 'preset' | 'ai'
 
+export type WorkbenchViewMode = 'canvas' | 'composer'
+
+export interface ComposerTarget {
+  /** null 表示新建独立实验并自动新建文件夹归档；非 null 表示归入指定实验文件夹 */
+  groupId: string | null
+  groupTitle: string | null
+}
+
 export type HealStatus = 'idle' | 'requesting' | 'applied' | 'succeeded' | 'failed'
 
 export interface AiVersionSnapshot {
@@ -78,6 +86,12 @@ interface WorkbenchState {
   activeGroupId: string | null
   /** 当前绘画窗口所属实验组名称。 */
   activeGroupTitle: string | null
+  /** 工作台主区视图：'composer' 显示公式输入创建页，'canvas' 显示绘图画布。 */
+  viewMode: WorkbenchViewMode
+  /** 公式输入创建页的归档目标；groupId 为 null 时自动新建文件夹归档。 */
+  composerTarget: ComposerTarget
+  openComposer: (target?: Partial<ComposerTarget>) => void
+  showCanvas: () => void
   enterPresentation: () => void
   exitPresentation: () => void
   toggleLeftPanel: () => void
@@ -147,6 +161,20 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
   workspaceRecordId: null,
   activeGroupId: null,
   activeGroupTitle: null,
+  viewMode: 'composer',
+  composerTarget: { groupId: null, groupTitle: null },
+
+  openComposer: (target) =>
+    set({
+      viewMode: 'composer',
+      presentation: false,
+      composerTarget: {
+        groupId: target?.groupId ?? null,
+        groupTitle: target?.groupTitle ?? null,
+      },
+    }),
+
+  showCanvas: () => set({ viewMode: 'canvas' }),
 
   enterPresentation: () => set({ presentation: true }),
 
@@ -204,6 +232,7 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
         workspaceRecordId,
         activeGroupId,
         activeGroupTitle,
+        viewMode: 'canvas',
         reloadKey: reloadKey + 1,
       })
       return
@@ -223,6 +252,7 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       workspaceRecordId,
       activeGroupId,
       activeGroupTitle,
+      viewMode: 'canvas',
       reloadKey: reloadKey + 1,
     })
   },
@@ -288,6 +318,8 @@ export const useWorkbenchStore = create<WorkbenchState>()((set, get) => ({
       workspaceRecordId: nextRecordId,
       activeGroupId: nextGroupId,
       activeGroupTitle: nextGroupTitle,
+      viewMode: 'canvas',
+      composerTarget: { groupId: null, groupTitle: null },
       reloadKey: reloadKey + 1,
     })
   },

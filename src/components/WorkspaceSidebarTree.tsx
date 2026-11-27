@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { DEFAULT_EXPERIMENT } from '../experiments'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { useWorkspaceStore } from '../store/useWorkspaceStore'
 import { createExperimentGroupId, groupWorkspaceEntries } from '../workspace/records'
@@ -43,7 +42,6 @@ export function WorkspaceSidebarTree({
 }: WorkspaceSidebarTreeProps) {
   const entries = useWorkspaceStore((state) => state.entries)
   const hydrating = useWorkspaceStore((state) => state.hydrating)
-  const createPresetWindow = useWorkspaceStore((state) => state.createPresetWindow)
   const duplicateWindow = useWorkspaceStore((state) => state.duplicateWindow)
   const deleteRecord = useWorkspaceStore((state) => state.deleteRecord)
   const renameRecord = useWorkspaceStore((state) => state.renameRecord)
@@ -51,8 +49,9 @@ export function WorkspaceSidebarTree({
 
   const currentRecordId = useWorkbenchStore((state) => state.workspaceRecordId)
   const activeGroupId = useWorkbenchStore((state) => state.activeGroupId)
-  const currentExperimentId = useWorkbenchStore((state) => state.experiment.id)
-  const currentSource = useWorkbenchStore((state) => state.source)
+  const viewMode = useWorkbenchStore((state) => state.viewMode)
+  const composerTarget = useWorkbenchStore((state) => state.composerTarget)
+  const openComposer = useWorkbenchStore((state) => state.openComposer)
 
   const [filterOpen, setFilterOpen] = useState(false)
   const [filterKind, setFilterKind] = useState<'all' | 'favorites' | 'ai' | 'preset'>('all')
@@ -124,35 +123,25 @@ export function WorkspaceSidebarTree({
     }
   }
 
-  const handleCreateGroup = async () => {
+  const handleCreateGroup = () => {
     const trimmed = newGroupName.trim()
     const groupId = createExperimentGroupId()
-    const created = await createPresetWindow(DEFAULT_EXPERIMENT.id, {
-      groupId,
-      ...(trimmed ? { groupTitle: trimmed, title: `${trimmed} · 绘画 1` } : {}),
-    })
-    if (!created) return
     setCreatingGroup(false)
     setNewGroupName('')
     setToggledGroups((prev) => ({ ...prev, [groupId]: true }))
-    openDrawingWindow(created)
+    openComposer({
+      groupId,
+      groupTitle: trimmed || null,
+    })
     onSelectWindow()
   }
 
-  const handleAddWindowInGroup = async (group: ExperimentGroupSummary) => {
-    const basePresetId =
-      group.windows[0]?.source === 'preset'
-        ? group.windows[0].experimentId
-        : currentSource === 'preset'
-          ? currentExperimentId
-          : DEFAULT_EXPERIMENT.id
-    const created = await createPresetWindow(basePresetId, {
+  const handleAddWindowInGroup = (group: ExperimentGroupSummary) => {
+    setToggledGroups((prev) => ({ ...prev, [group.groupId]: true }))
+    openComposer({
       groupId: group.groupId,
       groupTitle: group.title,
     })
-    if (!created) return
-    setToggledGroups((prev) => ({ ...prev, [group.groupId]: true }))
-    openDrawingWindow(created)
     onSelectWindow()
   }
 
@@ -368,7 +357,7 @@ export function WorkspaceSidebarTree({
           <div className="mx-1 my-3 flex flex-col items-center gap-1 rounded-[10px] border border-dashed border-line-strong/60 bg-surface/40 px-3 py-6 text-center">
             <span className="text-[11.5px] text-ink-dim">暂无匹配的实验</span>
             <span className="text-[10px] leading-[1.5] text-ink-faint">
-              点击右上角文件夹图标新建实验，或在 AI 沙盒直接绘图
+              点击上方「新建实验」输入公式，生成绘图后将自动建文件夹归档
             </span>
           </div>
         ) : (
@@ -411,7 +400,13 @@ export function WorkspaceSidebarTree({
                     />
                   </div>
                 ) : (
-                  <div className="group/folder flex items-center gap-0.5 rounded-[8px] px-2 py-[6px] transition-colors hover:bg-surface/75">
+                  <div
+                    className={`group/folder flex items-center gap-0.5 rounded-[8px] px-2 py-[6px] transition-colors ${
+                      viewMode === 'composer' && composerTarget.groupId === group.groupId
+                        ? 'bg-accent-soft/65'
+                        : 'hover:bg-surface/75'
+                    }`}
+                  >
                     <button
                       type="button"
                       onClick={() => toggleGroup(group.groupId)}
@@ -447,8 +442,8 @@ export function WorkspaceSidebarTree({
 
                     <button
                       type="button"
-                      onClick={() => void handleAddWindowInGroup(group)}
-                      title={`在「${group.title}」内新开绘画窗口`}
+                      onClick={() => handleAddWindowInGroup(group)}
+                      title={`在「${group.title}」内新建公式实验`}
                       className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-faint opacity-0 transition-all hover:bg-surface-soft hover:text-ink group-hover/folder:opacity-100 focus:opacity-100"
                     >
                       <PlusIcon className="size-3" />
@@ -460,7 +455,7 @@ export function WorkspaceSidebarTree({
                 {expanded && (
                   <div className="mb-1 flex flex-col gap-0.5 pl-4">
                     {visibleWindows.map((win) => {
-                      const active = win.id === currentRecordId
+                      const active = viewMode === 'canvas' && win.id === currentRecordId
                       const confirming = confirmDeleteId === win.id
                       const renamingWin = renamingWindowId === win.id
                       if (renamingWin) {

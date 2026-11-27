@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { DEFAULT_EXPERIMENT } from '../experiments'
 import { useWorkbenchStore } from '../store/useWorkbenchStore'
 import { useWorkspaceStore } from '../store/useWorkspaceStore'
 import {
@@ -30,11 +29,11 @@ export function WindowTabBar() {
   const currentExperimentId = useWorkbenchStore((state) => state.experiment.id)
   const activeGroupId = useWorkbenchStore((state) => state.activeGroupId)
   const activeGroupTitle = useWorkbenchStore((state) => state.activeGroupTitle)
+  const openComposer = useWorkbenchStore((state) => state.openComposer)
 
   const entries = useWorkspaceStore((state) => state.entries)
   const openWindowIds = useWorkspaceStore((state) => state.openWindowIds)
   const duplicateWindow = useWorkspaceStore((state) => state.duplicateWindow)
-  const createPresetWindow = useWorkspaceStore((state) => state.createPresetWindow)
 
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -131,25 +130,18 @@ export function WindowTabBar() {
     if (created) openDrawingWindow(created)
   }
 
-  const handleNewInGroup = async () => {
+  const handleNewInGroup = () => {
     setMenuOpen(false)
     const groupId = resolvedGroupId ?? createExperimentGroupId()
-    const created = await createPresetWindow(
-      currentSource === 'preset' ? currentExperimentId : DEFAULT_EXPERIMENT.id,
-      {
-        groupId,
-        groupTitle: resolvedGroupTitle,
-      },
-    )
-    if (created) openDrawingWindow(created)
+    openComposer({
+      groupId,
+      groupTitle: resolvedGroupTitle,
+    })
   }
 
-  const handleNewStandalone = async () => {
+  const handleNewStandalone = () => {
     setMenuOpen(false)
-    const created = await createPresetWindow(DEFAULT_EXPERIMENT.id, {
-      groupId: createExperimentGroupId(),
-    })
-    if (created) openDrawingWindow(created)
+    openComposer()
   }
 
   return (
@@ -263,13 +255,13 @@ export function WindowTabBar() {
               <button
                 type="button"
                 className="flex items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[11px] text-ink transition-colors hover:bg-surface-soft"
-                onClick={() => void handleNewInGroup()}
+                onClick={handleNewInGroup}
               >
                 <PlusIcon className="size-3.5 flex-none text-[#6d5a7d]" />
                 <span className="flex flex-col">
-                  <span className="font-medium">在当前实验新开绘画</span>
+                  <span className="font-medium">在当前实验新建公式实验</span>
                   <span className="text-[9.5px] text-ink-faint">
-                    在「{resolvedGroupTitle}」内新增窗口
+                    输入公式生成绘图并归入「{resolvedGroupTitle}」
                   </span>
                 </span>
               </button>
@@ -277,13 +269,13 @@ export function WindowTabBar() {
               <button
                 type="button"
                 className="flex items-center gap-2 rounded-[7px] px-2.5 py-2 text-left text-[11px] text-ink transition-colors hover:bg-surface-soft"
-                onClick={() => void handleNewStandalone()}
+                onClick={handleNewStandalone}
               >
                 <WorkspaceIcon className="size-3.5 flex-none text-ink-dim" />
                 <span className="flex flex-col">
-                  <span className="font-medium">新建独立实验窗口</span>
+                  <span className="font-medium">新建独立公式实验</span>
                   <span className="text-[9.5px] text-ink-faint">
-                    开启全新实验组与独立绘画窗口
+                    输入公式生成绘图并自动新建文件夹归档
                   </span>
                 </span>
               </button>

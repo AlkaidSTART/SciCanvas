@@ -8,7 +8,7 @@ import {
   getCapturePermissions,
   openPermissionSettings,
   requestCapturePermission,
-  resizeCurrentWindow,
+  setFloatingBallExpanded,
   startCurrentWindowDragging,
 } from '../floatingBall/bridge'
 import type { PermissionStatus } from '../floatingBall/bridge'
@@ -35,7 +35,14 @@ export function FloatingBallApp() {
     supported: true,
   })
 
-  const dragOriginRef = useRef<{ x: number; y: number; dragged: boolean } | null>(null)
+  const dragOriginRef = useRef<{
+    x: number
+    y: number
+    dragged: boolean
+    startedOnBall: boolean
+    pointerId: number
+  } | null>(null)
+  const didMountRef = useRef(false)
   const flashTimerRef = useRef<number | null>(null)
 
   const refreshPermissions = useCallback(async () => {
@@ -66,8 +73,12 @@ export function FloatingBallApp() {
   }, [])
 
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      if (!expanded) return
+    }
     const target = expanded ? EXPANDED_SIZE : COLLAPSED_SIZE
-    void resizeCurrentWindow(target.width, target.height)
+    void setFloatingBallExpanded(expanded, target.width, target.height)
   }, [expanded])
 
   const triggerSuccessFlash = () => {
@@ -194,33 +205,84 @@ export function FloatingBallApp() {
     }
   }
 
-  const handleBallPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleCollapsedPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
-    dragOriginRef.current = { x: event.clientX, y: event.clientY, dragged: false }
+    const target = event.target as HTMLElement
+    if (target.closest('[data-no-drag="true"]')) return
+    const startedOnBall = Boolean(target.closest('[data-ball-trigger="true"]'))
+    dragOriginRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      dragged: false,
+      startedOnBall,
+      pointerId: event.pointerId,
+    }
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // 忽略不支持指针捕获的环境
+    }
   }
 
-  const handleBallPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handleCollapsedPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const origin = dragOriginRef.current
-    if (!origin || origin.dragged) return
+    if (!origin || origin.dragged || origin.pointerId !== event.pointerId) return
     const dx = event.clientX - origin.x
     const dy = event.clientY - origin.y
     if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) {
       origin.dragged = true
+      try {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        }
+      } catch {
+        // 忽略释放失败
+      }
       void startCurrentWindowDragging()
     }
   }
 
-  const handleBallPointerUp = () => {
+  const handleCollapsedPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const origin = dragOriginRef.current
     dragOriginRef.current = null
-    if (!origin || origin.dragged) return
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // 忽略释放失败
+    }
+    if (!origin || origin.dragged || !origin.startedOnBall) return
     void handleCaptureText()
+  }
+
+  const handleCollapsedPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    dragOriginRef.current = null
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {
+      // 忽略释放失败
+    }
+  }
+
+  const handleExpandedPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+    if ((event.target as HTMLElement).closest('button, a, input, textarea, [data-no-drag="true"]')) {
+      return
+    }
+    void startCurrentWindowDragging()
   }
 
   if (!expanded) {
     return (
       <div
-        className="flex h-screen w-screen select-none items-center justify-center bg-transparent p-1.5"
+        className="flex h-screen w-screen cursor-grab select-none items-center justify-center bg-transparent p-1.5 active:cursor-grabbing"
+        onPointerDown={handleCollapsedPointerDown}
+        onPointerMove={handleCollapsedPointerMove}
+        onPointerUp={handleCollapsedPointerUp}
+        onPointerCancel={handleCollapsedPointerCancel}
         onContextMenu={(event) => {
           event.preventDefault()
           setExpanded(true)
@@ -229,14 +291,12 @@ export function FloatingBallApp() {
         <div className="relative">
           <button
             type="button"
-            className={`group relative grid size-[54px] place-items-center rounded-full border shadow-[0_8px_22px_rgba(58,51,43,0.22)] transition-transform active:scale-95 ${
+            data-ball-trigger="true"
+            className={`group relative grid size-[54px] cursor-grab place-items-center rounded-full border shadow-[0_8px_22px_rgba(58,51,43,0.22)] transition-transform active:scale-95 active:cursor-grabbing ${
               flashSuccess
                 ? 'border-mint bg-[radial-gradient(circle_at_30%_25%,#e5f5ec,#cfead9)] text-[#2f6b4b]'
                 : 'border-[rgba(124,157,187,0.55)] bg-[radial-gradient(circle_at_30%_22%,#fffdf8,#f3eadc)] text-accent-strong hover:border-accent-strong'
             }`}
-            onPointerDown={handleBallPointerDown}
-            onPointerMove={handleBallPointerMove}
-            onPointerUp={handleBallPointerUp}
             title="单击：将选中的论文公式加入对话框；拖动：移动悬浮球；右键或点右下角：展开菜单"
             aria-label="将选中的论文公式加入对话框"
           >
@@ -262,7 +322,8 @@ export function FloatingBallApp() {
 
           <button
             type="button"
-            className="absolute -bottom-0.5 -right-0.5 grid size-5 place-items-center rounded-full border border-line-strong bg-panel text-[10px] font-bold leading-none text-ink-dim shadow-sm transition-colors hover:border-accent-strong hover:text-accent-strong"
+            data-no-drag="true"
+            className="absolute -bottom-0.5 -right-0.5 grid size-5 cursor-pointer place-items-center rounded-full border border-line-strong bg-panel text-[10px] font-bold leading-none text-ink-dim shadow-sm transition-colors hover:border-accent-strong hover:text-accent-strong"
             onClick={(event) => {
               event.stopPropagation()
               setExpanded(true)
@@ -278,15 +339,12 @@ export function FloatingBallApp() {
   }
 
   return (
-    <div className="flex h-screen w-screen select-none flex-col bg-transparent p-1.5">
+    <div
+      className="flex h-screen w-screen cursor-grab select-none flex-col bg-transparent p-1.5 active:cursor-grabbing"
+      onPointerDown={handleExpandedPointerDown}
+    >
       <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-[16px] border border-line-strong bg-panel/96 p-3 shadow-[0_14px_34px_rgba(58,51,43,0.22)] backdrop-blur-md">
-        <div
-          className="flex cursor-grab items-center justify-between gap-2 active:cursor-grabbing"
-          onPointerDown={(event) => {
-            if ((event.target as HTMLElement).closest('button')) return
-            void startCurrentWindowDragging()
-          }}
-        >
+        <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="grid size-6 flex-none place-items-center rounded-[7px] border border-accent-line bg-accent-soft text-accent-strong">
               <BoltIcon className="size-3.5" />
@@ -296,7 +354,7 @@ export function FloatingBallApp() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
+              className="cursor-pointer rounded-md border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
               onClick={() => setExpanded(false)}
               title="收起为悬浮球"
             >
@@ -304,7 +362,7 @@ export function FloatingBallApp() {
             </button>
             <button
               type="button"
-              className="rounded-md border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-faint transition-colors hover:border-rose/40 hover:text-[#a9605f]"
+              className="cursor-pointer rounded-md border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-faint transition-colors hover:border-rose/40 hover:text-[#a9605f]"
               onClick={() => void closeFloatingBall()}
               title="关闭悬浮球"
             >
@@ -318,7 +376,7 @@ export function FloatingBallApp() {
             type="button"
             disabled={busy !== null}
             onClick={() => void handleCaptureText()}
-            className="flex flex-col items-start gap-0.5 rounded-[10px] border border-transparent bg-accent-strong px-2.5 py-2 text-left text-[#fbf7ef] transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-55"
+            className="flex cursor-pointer flex-col items-start gap-0.5 rounded-[10px] border border-transparent bg-accent-strong px-2.5 py-2 text-left text-[#fbf7ef] transition-colors enabled:hover:bg-accent disabled:cursor-not-allowed disabled:opacity-55"
           >
             <span className="text-[11.5px] font-semibold">
               {busy === 'text' ? '读取中…' : '加入选中公式'}
@@ -330,7 +388,7 @@ export function FloatingBallApp() {
             type="button"
             disabled={busy !== null}
             onClick={() => void handleCaptureScreenshot()}
-            className="flex flex-col items-start gap-0.5 rounded-[10px] border border-[rgba(138,118,168,0.35)] bg-[rgba(138,118,168,0.1)] px-2.5 py-2 text-left text-[#5d4b6c] transition-colors enabled:hover:bg-[rgba(138,118,168,0.18)] disabled:cursor-not-allowed disabled:opacity-55"
+            className="flex cursor-pointer flex-col items-start gap-0.5 rounded-[10px] border border-[rgba(138,118,168,0.35)] bg-[rgba(138,118,168,0.1)] px-2.5 py-2 text-left text-[#5d4b6c] transition-colors enabled:hover:bg-[rgba(138,118,168,0.18)] disabled:cursor-not-allowed disabled:opacity-55"
           >
             <span className="text-[11.5px] font-semibold">
               {busy === 'image' ? '框选中…' : '框选公式截图'}
@@ -355,14 +413,14 @@ export function FloatingBallApp() {
               <div className="flex gap-1.5">
                 <button
                   type="button"
-                  className="rounded-md border border-current/25 bg-surface/80 px-2 py-0.5 text-[9.5px] font-medium hover:bg-surface"
+                  className="cursor-pointer rounded-md border border-current/25 bg-surface/80 px-2 py-0.5 text-[9.5px] font-medium hover:bg-surface"
                   onClick={() => void handleRequestPermission(feedback.needsPermission!)}
                 >
                   请求权限
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-current/25 bg-surface/80 px-2 py-0.5 text-[9.5px] font-medium hover:bg-surface"
+                  className="cursor-pointer rounded-md border border-current/25 bg-surface/80 px-2 py-0.5 text-[9.5px] font-medium hover:bg-surface"
                   onClick={() => void openPermissionSettings(feedback.needsPermission!)}
                 >
                   打开系统设置
@@ -383,7 +441,7 @@ export function FloatingBallApp() {
                     ? void openPermissionSettings('accessibility')
                     : void handleRequestPermission('accessibility')
                 }
-                className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] transition-colors ${
+                className={`flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] transition-colors ${
                   permissions.accessibility
                     ? 'border-mint/40 bg-mint/12 text-[#2f6b4b]'
                     : 'border-amber/45 bg-amber/12 text-[#82611f] hover:bg-amber/20'
@@ -404,7 +462,7 @@ export function FloatingBallApp() {
                     ? void openPermissionSettings('screen_recording')
                     : void handleRequestPermission('screen_recording')
                 }
-                className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] transition-colors ${
+                className={`flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] transition-colors ${
                   permissions.screenRecording
                     ? 'border-mint/40 bg-mint/12 text-[#2f6b4b]'
                     : 'border-line-strong bg-surface text-ink-dim hover:border-accent-line'
@@ -424,7 +482,7 @@ export function FloatingBallApp() {
           <button
             type="button"
             onClick={() => void focusMainWindow()}
-            className="w-full rounded-lg border border-line bg-surface px-2.5 py-1 text-[10.5px] text-ink-dim transition-colors hover:border-line-strong hover:bg-surface-soft hover:text-ink"
+            className="w-full cursor-pointer rounded-lg border border-line bg-surface px-2.5 py-1 text-[10.5px] text-ink-dim transition-colors hover:border-line-strong hover:bg-surface-soft hover:text-ink"
           >
             打开 SciCanvas 主窗口
           </button>

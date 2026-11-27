@@ -132,11 +132,8 @@ export function validateLlmEndpointInput(input: UpsertLlmEndpointInput): LlmEndp
   if (apiKey.length > MAX_API_KEY_LENGTH) {
     return { ok: false, message: `API Key 不能超过 ${MAX_API_KEY_LENGTH} 个字符` }
   }
-  if (!model) {
-    return { ok: false, message: '请填写默认模型名称' }
-  }
   if (model.length > MAX_MODEL_LENGTH) {
-    return { ok: false, message: `默认模型名称不能超过 ${MAX_MODEL_LENGTH} 个字符` }
+    return { ok: false, message: `模型名称不能超过 ${MAX_MODEL_LENGTH} 个字符` }
   }
   if (visionModel.length > MAX_MODEL_LENGTH) {
     return { ok: false, message: `多模态视觉模型名称不能超过 ${MAX_MODEL_LENGTH} 个字符` }

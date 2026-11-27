@@ -20,6 +20,7 @@ pub fn run() {
             floating_ball::floating_ball_open,
             floating_ball::floating_ball_close,
             floating_ball::floating_ball_is_open,
+            floating_ball::floating_ball_set_expanded,
             floating_ball::get_capture_permissions,
             floating_ball::request_capture_permission,
             floating_ball::open_permission_settings,

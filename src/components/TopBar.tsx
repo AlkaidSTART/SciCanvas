@@ -156,7 +156,7 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
             </span>
           </motion.button>
 
-          <div className="ml-1 hidden items-center gap-1 border-l border-line pl-2.5 min-[960px]:flex">
+          <div className="ml-1 hidden items-center border-l border-line pl-2.5 min-[960px]:flex">
             <motion.button
               whileTap={TAP_ICON}
               className={`grid size-[28px] place-items-center rounded-[7px] border transition-colors ${
@@ -171,21 +171,6 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
               title={leftPanelOpen ? '收起左侧实验栏 (⌘B)' : '展开左侧实验栏 (⌘B)'}
             >
               <PanelLeftIcon className="size-[15px]" />
-            </motion.button>
-            <motion.button
-              whileTap={TAP_ICON}
-              className={`grid size-[28px] place-items-center rounded-[7px] border transition-colors ${
-                rightPanelOpen
-                  ? 'border-accent-line bg-accent-soft text-accent-strong'
-                  : 'border-transparent text-ink-faint hover:border-line hover:bg-surface-soft hover:text-ink-dim'
-              }`}
-              type="button"
-              onClick={toggleRightPanel}
-              aria-pressed={rightPanelOpen}
-              aria-label={rightPanelOpen ? '收起右侧检查器' : '展开右侧检查器'}
-              title={rightPanelOpen ? '收起右侧检查器 (⌘I)' : '展开右侧检查器 (⌘I)'}
-            >
-              <PanelRightIcon className="size-[15px]" />
             </motion.button>
           </div>
         </div>
@@ -260,6 +245,25 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
           >
             {exporting ? '导出中…' : '导出 HTML'}
           </motion.button>
+          {!isSubPage && (
+            <div className="ml-1 hidden items-center border-l border-line pl-2.5 min-[960px]:flex">
+              <motion.button
+                whileTap={TAP_ICON}
+                className={`grid size-[28px] place-items-center rounded-[7px] border transition-colors ${
+                  rightPanelOpen
+                    ? 'border-accent-line bg-accent-soft text-accent-strong'
+                    : 'border-transparent text-ink-faint hover:border-line hover:bg-surface-soft hover:text-ink-dim'
+                }`}
+                type="button"
+                onClick={toggleRightPanel}
+                aria-pressed={rightPanelOpen}
+                aria-label={rightPanelOpen ? '收起右侧检查器' : '展开右侧检查器'}
+                title={rightPanelOpen ? '收起右侧检查器 (⌘I)' : '展开右侧检查器 (⌘I)'}
+              >
+                <PanelRightIcon className="size-[15px]" />
+              </motion.button>
+            </div>
+          )}
         </div>
       </motion.header>
 

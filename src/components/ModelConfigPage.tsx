@@ -260,7 +260,7 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
           <div className="min-w-0">
             <div className="truncate text-[12.5px] font-medium text-ink">{item.name}</div>
             <div className="truncate font-mono text-[10px] text-ink-faint">
-              {item.model || '未填模型'}
+              {getPresetTemplateById(item.id)?.badge ?? item.baseUrl.replace(/^https?:\/\//, '')}
             </div>
           </div>
         </div>
@@ -363,7 +363,7 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
               </div>
               {isAlreadyActive && (
                 <span className="flex-none text-[11px] font-medium text-[#2f6b4b]">
-                  当前默认模型
+                  当前使用中
                 </span>
               )}
             </div>
@@ -448,45 +448,6 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
                 </div>
               </label>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-ink-dim">模型名称</span>
-                  <input
-                    className={INPUT_CLASS}
-                    type="text"
-                    value={draft.model}
-                    maxLength={160}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="例如：deepseek-chat / gpt-4o-mini"
-                    onChange={(event) =>
-                      updateDraft((current) => ({ ...current, model: event.target.value }))
-                    }
-                  />
-                </label>
-
-                {selectedTemplate && selectedTemplate.suggestedModels.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {selectedTemplate.suggestedModels.map((modelName) => (
-                      <button
-                        key={modelName}
-                        type="button"
-                        onClick={() =>
-                          updateDraft((current) => ({ ...current, model: modelName }))
-                        }
-                        className={`rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors ${
-                          draft.model === modelName
-                            ? 'border-accent-line bg-accent-soft text-accent-strong'
-                            : 'border-line bg-surface text-ink-dim hover:border-line-strong hover:text-ink'
-                        }`}
-                      >
-                        {modelName}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {isCustomMode ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="flex flex-col gap-1">
@@ -524,7 +485,7 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
                       maxLength={160}
                       autoComplete="off"
                       spellCheck={false}
-                      placeholder="留空则复用默认模型"
+                      placeholder="可选，用于公式图片识别"
                       onChange={(event) =>
                         updateDraft((current) => ({ ...current, visionModel: event.target.value }))
                       }
@@ -600,7 +561,7 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
                             maxLength={160}
                             autoComplete="off"
                             spellCheck={false}
-                            placeholder="留空则复用默认模型"
+                            placeholder="可选，用于公式图片识别"
                             onChange={(event) =>
                               updateDraft((current) => ({
                                 ...current,
