@@ -476,7 +476,7 @@ function drawBadgeLabel(
   const boxY = y - boxH / 2
 
   if (badge) {
-    ctx.fillStyle = 'rgba(252, 249, 242, 0.92)'
+    ctx.fillStyle = CANVAS.badge
     ctx.strokeStyle = CANVAS.frame
     ctx.lineWidth = 1
     ctx.beginPath()

@@ -3,6 +3,7 @@ import type {
   ParamValues,
   Viewport,
 } from '../types/experiment'
+import { CANVAS } from './canvasKit'
 
 export interface OscillatorPoint {
   x: number
@@ -24,21 +25,51 @@ const MAX_TRAIL = 600
 const TRAIL_SAMPLE_INTERVAL = 2
 
 const COLORS = {
-  background: '#FBF7EF',
-  grid: 'rgba(120, 100, 78, 0.06)',
-  axis: 'rgba(120, 100, 78, 0.24)',
-  text: '#7D7062',
-  textStrong: '#3A332B',
-  accent: '#7C9DBB',
-  accentSoft: 'rgba(124, 157, 187, 0.55)',
-  accentFill: 'rgba(154, 180, 204, 0.22)',
-  spring: '#87B79B',
-  amber: '#E0A279',
-  amberText: '#A4683B',
-  wall: 'rgba(120, 100, 78, 0.45)',
-  guide: 'rgba(120, 100, 78, 0.28)',
-  faint: 'rgba(120, 100, 78, 0.2)',
-  halo: 'rgba(124, 157, 187, 0.2)',
+  get background() {
+    return CANVAS.background
+  },
+  get grid() {
+    return CANVAS.grid
+  },
+  get axis() {
+    return CANVAS.axis
+  },
+  get text() {
+    return CANVAS.text
+  },
+  get textStrong() {
+    return CANVAS.textStrong
+  },
+  get accent() {
+    return CANVAS.blue
+  },
+  get accentSoft() {
+    return CANVAS.blueSoft
+  },
+  get accentFill() {
+    return CANVAS.halo
+  },
+  get spring() {
+    return CANVAS.mint
+  },
+  get amber() {
+    return CANVAS.peach
+  },
+  get amberText() {
+    return CANVAS.peach
+  },
+  get wall() {
+    return CANVAS.axis
+  },
+  get guide() {
+    return CANVAS.axis
+  },
+  get faint() {
+    return CANVAS.faint
+  },
+  get halo() {
+    return CANVAS.halo
+  },
 }
 
 function readNumber(params: ParamValues, key: string, fallback: number): number {

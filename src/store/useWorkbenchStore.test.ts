@@ -407,3 +407,37 @@ describe('M7 本地记录归属', () => {
     expect(useWorkbenchStore.getState().workspaceRecordId).toBeNull()
   })
 })
+
+describe('公式新建页与实验文件夹归档目标', () => {
+  it('openComposer 支持独立新建与指定实验文件夹内新建，生成或选案例后自动切回画布', () => {
+    useWorkbenchStore.getState().openComposer()
+    expect(useWorkbenchStore.getState().viewMode).toBe('composer')
+    expect(useWorkbenchStore.getState().composerTarget).toEqual({
+      groupId: null,
+      groupTitle: null,
+    })
+
+    useWorkbenchStore.getState().openComposer({
+      groupId: 'exp-group-1',
+      groupTitle: '受迫振动对比组',
+    })
+    expect(useWorkbenchStore.getState().viewMode).toBe('composer')
+    expect(useWorkbenchStore.getState().composerTarget).toEqual({
+      groupId: 'exp-group-1',
+      groupTitle: '受迫振动对比组',
+    })
+
+    useWorkbenchStore.getState().applyGeneratedExperiment(aiSpec, undefined, {
+      newRecord: true,
+      groupId: 'exp-group-1',
+      groupTitle: '受迫振动对比组',
+    })
+    expect(useWorkbenchStore.getState().viewMode).toBe('canvas')
+    expect(useWorkbenchStore.getState().activeGroupId).toBe('exp-group-1')
+    expect(useWorkbenchStore.getState().activeGroupTitle).toBe('受迫振动对比组')
+    expect(useWorkbenchStore.getState().composerTarget).toEqual({
+      groupId: null,
+      groupTitle: null,
+    })
+  })
+})

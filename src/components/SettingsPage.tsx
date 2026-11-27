@@ -10,7 +10,10 @@ import {
 } from '../floatingBall/bridge'
 import type { PermissionStatus } from '../floatingBall/bridge'
 import { useFloatingBallStore } from '../store/useFloatingBallStore'
-import { BoltIcon, SettingsIcon } from './icons'
+import { useThemeStore } from '../store/useThemeStore'
+import { DEFAULT_THEME_ID, THEME_PRESETS, getThemePreset } from '../theme/presets'
+import type { ThemeMode, ThemePreset } from '../theme/presets'
+import { BoltIcon, CheckIcon, PaletteIcon, SettingsIcon } from './icons'
 import { FAST_TRANSITION, SPRING_SNAPPY, TAP_BUTTON } from './motion'
 
 interface SettingsPageProps {
@@ -22,11 +25,110 @@ interface FeedbackMessage {
   text: string
 }
 
+type ThemeFilter = 'all' | ThemeMode
+
+function ThemePreviewMini({ preset }: { preset: ThemePreset }) {
+  const { tokens, canvas } = preset
+  return (
+    <div
+      className="relative h-[68px] w-full overflow-hidden rounded-[9px] border"
+      style={{
+        backgroundColor: tokens['--color-canvas'],
+        borderColor: tokens['--color-line-strong'],
+        backgroundImage: `radial-gradient(120px 64px at 85% 0%, ${tokens['--bg-glow-primary']}, transparent 70%), radial-gradient(90px 56px at 10% 100%, ${tokens['--bg-glow-secondary']}, transparent 70%)`,
+      }}
+      aria-hidden="true"
+    >
+      {/* 模拟顶栏 */}
+      <div
+        className="flex h-[15px] items-center justify-between border-b px-2"
+        style={{
+          backgroundColor: tokens['--color-panel'],
+          borderColor: tokens['--color-line'],
+        }}
+      >
+        <div className="flex items-center gap-1">
+          <span
+            className="size-[5px] rounded-full"
+            style={{ backgroundColor: tokens['--color-accent-strong'] }}
+          />
+          <span
+            className="h-[3px] w-7 rounded-full opacity-75"
+            style={{ backgroundColor: tokens['--color-ink'] }}
+          />
+        </div>
+        <span
+          className="h-[5px] w-4 rounded-full"
+          style={{ backgroundColor: tokens['--color-accent-soft'] }}
+        />
+      </div>
+
+      {/* 模拟侧栏 + 画布区域 */}
+      <div className="flex h-[53px] gap-1.5 p-1.5">
+        <div
+          className="flex w-[32%] flex-col gap-1 rounded-[5px] border p-1"
+          style={{
+            backgroundColor: tokens['--color-panel'],
+            borderColor: tokens['--color-line'],
+          }}
+        >
+          <span
+            className="h-[4px] w-4/5 rounded-full"
+            style={{ backgroundColor: tokens['--color-accent-strong'] }}
+          />
+          <span
+            className="h-[3px] w-3/5 rounded-full opacity-45"
+            style={{ backgroundColor: tokens['--color-ink-dim'] }}
+          />
+          <span
+            className="mt-auto h-[3px] w-2/3 rounded-full opacity-35"
+            style={{ backgroundColor: tokens['--color-ink-faint'] }}
+          />
+        </div>
+
+        <div
+          className="relative flex flex-1 flex-col justify-between overflow-hidden rounded-[5px] border p-1.5"
+          style={{
+            backgroundColor: canvas.background,
+            borderColor: tokens['--color-line'],
+          }}
+        >
+          <svg
+            className="h-full w-full"
+            viewBox="0 0 96 36"
+            fill="none"
+            preserveAspectRatio="none"
+          >
+            <path
+              d="M2 27 C 16 8, 30 8, 44 20 S 74 30, 94 11"
+              stroke={canvas.blue}
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            />
+            <path
+              d="M2 16 C 18 26, 36 28, 54 14 S 78 10, 94 22"
+              stroke={canvas.mint}
+              strokeWidth="1.7"
+              strokeDasharray="3 3"
+              strokeLinecap="round"
+            />
+            <circle cx="44" cy="20" r="2.8" fill={canvas.peach} />
+          </svg>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SettingsPage({ onBack }: SettingsPageProps) {
   const floatingBallOpen = useFloatingBallStore((state) => state.floatingBallOpen)
   const setFloatingBallOpen = useFloatingBallStore((state) => state.setFloatingBallOpen)
+  const themeId = useThemeStore((state) => state.themeId)
+  const setTheme = useThemeStore((state) => state.setTheme)
+  const resetTheme = useThemeStore((state) => state.resetTheme)
 
   const desktop = isDesktopApp()
+  const [themeFilter, setThemeFilter] = useState<ThemeFilter>('all')
   const [toggling, setToggling] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackMessage | null>(null)
   const [permissions, setPermissions] = useState<PermissionStatus>({
@@ -34,6 +136,12 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
     screenRecording: false,
     supported: desktop,
   })
+
+  const activeTheme = getThemePreset(themeId)
+  const visibleThemes =
+    themeFilter === 'all'
+      ? THEME_PRESETS
+      : THEME_PRESETS.filter((preset) => preset.mode === themeFilter)
 
   useEffect(() => {
     if (!desktop) return undefined
@@ -144,7 +252,7 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
                 </span>
               </div>
               <p className="m-0 text-[11.5px] text-ink-faint">
-                管理桌面悬浮球开关与系统捕获权限
+                管理界面主题预设、桌面悬浮球开关与系统捕获权限
               </p>
             </div>
           </div>
@@ -160,12 +268,153 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
         </div>
 
         <section
+          aria-labelledby="theme-preset-setting-title"
+          className="flex flex-col gap-4 rounded-[14px] border border-line bg-panel/92 p-5 shadow-[0_8px_24px_rgba(0,0,0,0.06)]"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="mt-0.5 grid size-9 flex-none place-items-center rounded-[10px] border border-accent-line bg-accent-soft text-accent-strong">
+                <PaletteIcon className="size-[18px]" />
+              </span>
+              <div className="flex min-w-0 flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2
+                    id="theme-preset-setting-title"
+                    className="m-0 text-[14px] font-semibold text-ink"
+                  >
+                    主题预设
+                  </h2>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-accent-line bg-accent-soft px-2 py-0.5 text-[10px] font-medium text-accent-strong">
+                    当前：{activeTheme.name}
+                  </span>
+                </div>
+                <p className="m-0 text-[12px] leading-[1.6] text-ink-dim">
+                  切换工作台界面与实验画布配色，点击即刻生效并自动保存到本地。
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div
+                className="inline-flex rounded-lg border border-line bg-surface-soft p-0.5"
+                role="group"
+                aria-label="按明暗筛选主题"
+              >
+                {(
+                  [
+                    { id: 'all', label: '全部' },
+                    { id: 'light', label: '浅色' },
+                    { id: 'dark', label: '深色' },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={themeFilter === option.id}
+                    onClick={() => setThemeFilter(option.id)}
+                    className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                      themeFilter === option.id
+                        ? 'bg-panel text-accent-strong shadow-[0_1px_2px_rgba(0,0,0,0.08)]'
+                        : 'text-ink-faint hover:text-ink-dim'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              {themeId !== DEFAULT_THEME_ID && (
+                <motion.button
+                  whileTap={TAP_BUTTON}
+                  type="button"
+                  onClick={resetTheme}
+                  className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11px] font-medium text-ink-dim transition-colors hover:border-line-strong hover:bg-surface-soft hover:text-ink"
+                >
+                  恢复默认
+                </motion.button>
+              )}
+            </div>
+          </div>
+
+          <div
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3"
+            role="radiogroup"
+            aria-label="选择应用主题预设"
+          >
+            {visibleThemes.map((preset) => {
+              const selected = preset.id === themeId
+              return (
+                <motion.button
+                  key={preset.id}
+                  whileTap={TAP_BUTTON}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setTheme(preset.id)}
+                  className={`group flex flex-col gap-2.5 rounded-[12px] border p-3 text-left transition-all ${
+                    selected
+                      ? 'border-accent-strong bg-accent-soft/55 ring-1 ring-accent-line'
+                      : 'border-line bg-surface/80 hover:border-line-strong hover:bg-surface'
+                  }`}
+                >
+                  <ThemePreviewMini preset={preset} />
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[12.5px] font-semibold text-ink">
+                        {preset.name}
+                      </span>
+                      <span className="rounded-[4px] border border-line bg-surface-soft px-1.5 py-px text-[9.5px] font-medium text-ink-faint">
+                        {preset.tag}
+                      </span>
+                    </div>
+                    <span
+                      className={`grid size-[18px] flex-none place-items-center rounded-full border transition-colors ${
+                        selected
+                          ? 'border-accent-strong bg-accent-strong text-panel'
+                          : 'border-line-strong bg-transparent text-transparent group-hover:border-accent-line'
+                      }`}
+                    >
+                      <CheckIcon className="size-3" />
+                    </span>
+                  </div>
+
+                  <p className="m-0 line-clamp-2 text-[11px] leading-[1.5] text-ink-faint">
+                    {preset.description}
+                  </p>
+
+                  <div className="mt-auto flex items-center justify-between pt-0.5">
+                    <div className="flex items-center gap-1.5" aria-hidden="true">
+                      {[
+                        preset.tokens['--color-canvas'],
+                        preset.tokens['--color-accent-strong'],
+                        preset.tokens['--color-mint'],
+                        preset.tokens['--color-peach'],
+                      ].map((swatch, index) => (
+                        <span
+                          key={`${preset.id}-swatch-${index}`}
+                          className="size-3 rounded-full border border-line-strong/60"
+                          style={{ backgroundColor: swatch }}
+                        />
+                      ))}
+                    </div>
+                    <span className="font-mono text-[9.5px] text-ink-faint">
+                      {preset.mode === 'dark' ? 'DARK' : 'LIGHT'}
+                    </span>
+                  </div>
+                </motion.button>
+              )
+            })}
+          </div>
+        </section>
+
+        <section
           aria-labelledby="floating-ball-setting-title"
-          className="flex flex-col gap-4 rounded-[14px] border border-line bg-panel/92 p-5 shadow-[0_8px_24px_rgba(58,51,43,0.06)]"
+          className="flex flex-col gap-4 rounded-[14px] border border-line bg-panel/92 p-5 shadow-[0_8px_24px_rgba(0,0,0,0.06)]"
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-3">
-              <span className="mt-0.5 grid size-9 flex-none place-items-center rounded-[10px] border border-[rgba(124,157,187,0.45)] bg-[radial-gradient(circle_at_30%_22%,#fffdf8,#f3eadc)] text-accent-strong">
+              <span className="mt-0.5 grid size-9 flex-none place-items-center rounded-[10px] border border-accent-line bg-accent-soft text-accent-strong">
                 <BoltIcon className="size-[18px]" />
               </span>
               <div className="flex min-w-0 flex-col gap-1">

@@ -172,7 +172,7 @@ export function WorkspaceSidebarTree({
           <button
             type="button"
             onClick={() => setSortMenuOpen((current) => !current)}
-            className="flex items-center gap-1 rounded-[6px] px-1 py-0.5 text-[11.5px] font-medium text-ink-faint transition-colors hover:bg-surface/70 hover:text-ink-dim"
+            className="flex items-center gap-1 rounded-[6px] px-1 py-0.5 text-[11.5px] font-medium text-ink-faint transition-colors duration-150 hover:bg-surface-soft hover:text-ink-dim"
           >
             <span>实验列表</span>
             <ChevronDownIcon className="size-3" />
@@ -227,10 +227,10 @@ export function WorkspaceSidebarTree({
             onClick={() => setFilterOpen((current) => !current)}
             aria-pressed={filterOpen}
             title="筛选或搜索实验与绘画窗口"
-            className={`grid size-[26px] place-items-center rounded-[6px] transition-colors ${
+            className={`grid size-[26px] place-items-center rounded-[6px] transition-colors duration-150 ${
               filterOpen || filterKind !== 'all' || searchQuery
                 ? 'bg-accent-soft text-accent-strong'
-                : 'text-ink-faint hover:bg-surface/80 hover:text-ink-dim'
+                : 'text-ink-faint hover:bg-surface-soft hover:text-ink-dim'
             }`}
           >
             <FilterLinesIcon className="size-3.5" />
@@ -243,10 +243,10 @@ export function WorkspaceSidebarTree({
               setNewGroupName('')
             }}
             title="新建实验项目"
-            className={`grid size-[26px] place-items-center rounded-[6px] transition-colors ${
+            className={`grid size-[26px] place-items-center rounded-[6px] transition-colors duration-150 ${
               creatingGroup
                 ? 'bg-accent-soft text-accent-strong'
-                : 'text-ink-faint hover:bg-surface/80 hover:text-ink-dim'
+                : 'text-ink-faint hover:bg-surface-soft hover:text-ink-dim'
             }`}
           >
             <FolderPlusIcon className="size-3.5" />
@@ -370,11 +370,14 @@ export function WorkspaceSidebarTree({
             const hasMore = group.windows.length > DEFAULT_VISIBLE_WINDOWS && !showAll
             const renaming = renamingGroupId === group.groupId
 
+            const isComposerGroup =
+              viewMode === 'composer' && composerTarget.groupId === group.groupId
+
             return (
               <div key={group.groupId} className="flex flex-col">
                 {/* 实验文件夹行 */}
                 {renaming ? (
-                  <div className="flex items-center gap-1 px-1.5 py-1">
+                  <div className="flex h-8 items-center gap-1 px-1.5">
                     <input
                       type="text"
                       autoFocus
@@ -401,53 +404,61 @@ export function WorkspaceSidebarTree({
                   </div>
                 ) : (
                   <div
-                    className={`group/folder flex items-center gap-0.5 rounded-[8px] px-2 py-[6px] transition-colors ${
-                      viewMode === 'composer' && composerTarget.groupId === group.groupId
-                        ? 'bg-accent-soft/65'
-                        : 'hover:bg-surface/75'
+                    className={`group/folder relative flex h-8 items-center rounded-[8px] px-2 transition-colors duration-150 ${
+                      isComposerGroup
+                        ? 'bg-[#e7edf2]'
+                        : 'hover:bg-surface-soft'
                     }`}
                   >
                     <button
                       type="button"
                       onClick={() => toggleGroup(group.groupId)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="flex h-full min-w-0 flex-1 items-center gap-2 text-left"
                       title={`${group.title}（${group.windows.length} 个绘画窗口）`}
                     >
                       <FolderIcon
-                        className={`size-[14px] flex-none transition-colors ${
-                          expanded ? 'text-ink-dim' : 'text-ink-faint'
+                        className={`size-[14px] flex-none transition-colors duration-150 ${
+                          expanded ? 'text-ink-dim' : 'text-ink-faint group-hover/folder:text-ink-dim'
                         }`}
                       />
                       <span
-                        className={`min-w-0 flex-1 truncate text-[12px] leading-snug transition-colors ${
-                          expanded ? 'font-[550] text-ink' : 'font-normal text-ink-dim'
+                        className={`min-w-0 flex-1 truncate text-[12px] leading-snug transition-colors duration-150 ${
+                          expanded ? 'font-[550] text-ink' : 'font-normal text-ink-dim group-hover/folder:text-ink'
                         }`}
                       >
                         {group.title}
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setRenamingGroupId(group.groupId)
-                        setRenameGroupValue(group.title)
-                      }}
-                      title={`重命名实验「${group.title}」`}
-                      className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-faint opacity-0 transition-all hover:bg-surface-soft hover:text-ink group-hover/folder:opacity-100 focus:opacity-100"
+                    <div
+                      className={`pointer-events-none absolute inset-y-0 right-1 flex items-center gap-0.5 rounded-r-[8px] pl-5 pr-0.5 opacity-0 transition-opacity duration-150 group-hover/folder:pointer-events-auto group-hover/folder:opacity-100 group-focus-within/folder:pointer-events-auto group-focus-within/folder:opacity-100 ${
+                        isComposerGroup
+                          ? 'bg-gradient-to-l from-[#e7edf2] via-[#e7edf2]/95 to-transparent'
+                          : 'bg-gradient-to-l from-surface-soft via-surface-soft/95 to-transparent'
+                      }`}
                     >
-                      <PencilIcon className="size-3" />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setRenamingGroupId(group.groupId)
+                          setRenameGroupValue(group.title)
+                        }}
+                        title={`重命名实验「${group.title}」`}
+                        className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-faint transition-colors duration-150 hover:bg-ink/[0.08] hover:text-ink"
+                      >
+                        <PencilIcon className="size-3" />
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleAddWindowInGroup(group)}
-                      title={`在「${group.title}」内新建公式实验`}
-                      className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-faint opacity-0 transition-all hover:bg-surface-soft hover:text-ink group-hover/folder:opacity-100 focus:opacity-100"
-                    >
-                      <PlusIcon className="size-3" />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddWindowInGroup(group)}
+                        title={`在「${group.title}」内新建公式实验`}
+                        className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-faint transition-colors duration-150 hover:bg-ink/[0.08] hover:text-ink"
+                      >
+                        <PlusIcon className="size-3" />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -460,7 +471,7 @@ export function WorkspaceSidebarTree({
                       const renamingWin = renamingWindowId === win.id
                       if (renamingWin) {
                         return (
-                          <div key={win.id} className="flex items-center gap-1 px-1.5 py-0.5">
+                          <div key={win.id} className="flex h-[30px] items-center gap-1 px-1.5">
                             <input
                               type="text"
                               autoFocus
@@ -490,16 +501,19 @@ export function WorkspaceSidebarTree({
                       return (
                         <div
                           key={win.id}
-                          className={`group/win relative flex items-center gap-1.5 rounded-[8px] px-2.5 py-[6px] transition-colors ${
+                          onMouseLeave={() => {
+                            if (confirming) setConfirmDeleteId(null)
+                          }}
+                          className={`group/win relative flex h-[30px] items-center rounded-[8px] px-2.5 transition-colors duration-150 ${
                             active
-                              ? 'bg-[rgba(58,51,43,0.08)] text-ink'
-                              : 'text-ink-dim hover:bg-surface/75 hover:text-ink'
+                              ? 'bg-[#e9e1d3] text-ink'
+                              : 'text-ink-dim hover:bg-surface-soft hover:text-ink'
                           }`}
                         >
                           <button
                             type="button"
                             onClick={() => handleOpenWindow(win)}
-                            className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
+                            className="flex h-full min-w-0 flex-1 items-center justify-between gap-2 text-left"
                             title={win.title}
                           >
                             <span
@@ -510,20 +524,26 @@ export function WorkspaceSidebarTree({
                               {win.title}
                             </span>
                             <span
-                              className={`flex-none text-[10px] tabular-nums text-ink-faint transition-opacity ${
+                              className={`flex-none text-[10px] tabular-nums text-ink-faint transition-opacity duration-150 ${
                                 confirming
-                                  ? 'hidden'
-                                  : 'group-hover/win:hidden'
+                                  ? 'opacity-0'
+                                  : 'group-hover/win:opacity-0 group-focus-within/win:opacity-0'
                               }`}
                             >
                               {formatRelativeTime(win.updatedAt, now)}
                             </span>
                           </button>
 
-                          {/* 悬停时显示轻量操作：重命名 / 同实验复制新窗 / 删除 */}
+                          {/* 悬停时浮层淡入轻量操作，避免挤压标题或改变行高导致列表抖动 */}
                           <div
-                            className={`flex flex-none items-center gap-0.5 ${
-                              confirming ? 'flex' : 'hidden group-hover/win:flex'
+                            className={`absolute inset-y-0 right-1 flex items-center gap-0.5 rounded-r-[8px] pl-6 pr-0.5 transition-opacity duration-150 ${
+                              active
+                                ? 'bg-gradient-to-l from-[#e9e1d3] via-[#e9e1d3]/95 to-transparent'
+                                : 'bg-gradient-to-l from-surface-soft via-surface-soft/95 to-transparent'
+                            } ${
+                              confirming
+                                ? 'pointer-events-auto opacity-100'
+                                : 'pointer-events-none opacity-0 group-hover/win:pointer-events-auto group-hover/win:opacity-100 group-focus-within/win:pointer-events-auto group-focus-within/win:opacity-100'
                             }`}
                           >
                             {!confirming && (
@@ -536,7 +556,7 @@ export function WorkspaceSidebarTree({
                                     setRenameWindowValue(win.title)
                                   }}
                                   title="重命名该绘画窗口"
-                                  className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+                                  className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors duration-150 hover:bg-ink/[0.08] hover:text-ink"
                                 >
                                   <PencilIcon className="size-3" />
                                 </button>
@@ -547,7 +567,7 @@ export function WorkspaceSidebarTree({
                                     void handleDuplicate(win)
                                   }}
                                   title="在同实验内复制为新绘画窗口"
-                                  className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+                                  className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors duration-150 hover:bg-ink/[0.08] hover:text-ink"
                                 >
                                   <DuplicateIcon className="size-3" />
                                 </button>
@@ -559,14 +579,11 @@ export function WorkspaceSidebarTree({
                                 event.stopPropagation()
                                 void handleDeleteWindow(win)
                               }}
-                              onMouseLeave={() => {
-                                if (confirmDeleteId === win.id) setConfirmDeleteId(null)
-                              }}
                               title={confirming ? '再次点击确认删除' : '删除该绘画窗口'}
-                              className={`rounded-[5px] transition-colors ${
+                              className={`rounded-[5px] transition-colors duration-150 ${
                                 confirming
-                                  ? 'bg-rose/[0.15] px-1.5 py-0.5 text-[9.5px] font-medium text-[#a9605f]'
-                                  : 'grid size-5 place-items-center text-ink-faint hover:bg-rose/[0.12] hover:text-[#a9605f]'
+                                  ? 'bg-rose/[0.18] px-1.5 py-0.5 text-[9.5px] font-medium text-[#a9605f] hover:bg-rose/[0.26]'
+                                  : 'grid size-5 place-items-center text-ink-faint hover:bg-rose/[0.14] hover:text-[#a9605f]'
                               }`}
                             >
                               {confirming ? '确认' : <TrashIcon className="size-3" />}

@@ -40,7 +40,7 @@ export function ControlBar({ onTogglePlay, onStep, onReset }: ControlBarProps) {
 
   return (
     <footer
-      className={`flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,#fcf9f2,#f8f2e8)] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px] ${
+      className={`flex flex-none flex-col gap-3 border-t border-line bg-[linear-gradient(180deg,var(--color-panel),var(--color-canvas))] px-[18px] pb-[15px] pt-[13px] max-[640px]:px-3 max-[640px]:pb-[13px] max-[640px]:pt-[11px] ${
         hideInlineControlsOnDesktop
           ? 'max-[959px]:max-h-[42vh] max-[959px]:overflow-y-auto min-[960px]:gap-0 min-[960px]:px-3.5 min-[960px]:py-2'
           : 'max-h-[38vh] overflow-y-auto'

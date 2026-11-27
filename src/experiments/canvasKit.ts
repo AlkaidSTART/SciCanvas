@@ -1,11 +1,13 @@
+import type { CanvasThemePalette } from '../theme/presets'
 import type { LegendItem } from '../types/experiment'
 
 /**
- * 预设案例共用的暖纸画布配色与绘制原语。
+ * 预设案例共用的画布配色与绘制原语，会随主题预设实时更新。
  * 图例文案直接取自 ExperimentDefinition.legend，保证说明与画面同源。
  */
-export const CANVAS = {
+export const CANVAS: CanvasThemePalette = {
   background: '#FBF7EF',
+  badge: 'rgba(252, 249, 242, 0.92)',
   grid: 'rgba(120, 100, 78, 0.055)',
   gridStrong: 'rgba(120, 100, 78, 0.11)',
   axis: 'rgba(120, 100, 78, 0.28)',
@@ -22,7 +24,11 @@ export const CANVAS = {
   lilac: '#8A76A8',
   amber: '#C08A3A',
   halo: 'rgba(124, 157, 187, 0.18)',
-} as const
+}
+
+export function applyCanvasTheme(palette: CanvasThemePalette): void {
+  Object.assign(CANVAS, palette)
+}
 
 export const MONO_FONT = '"JetBrains Mono", ui-monospace, monospace'
 

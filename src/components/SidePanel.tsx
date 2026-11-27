@@ -67,7 +67,7 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
             openComposer()
             if (isSubPage) onNavigate('workbench')
           }}
-          className={`flex w-full items-center gap-2 rounded-[10px] border px-3 py-2 text-[12.5px] font-medium transition-all max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
+          className={`flex w-full items-center gap-2 rounded-[10px] border px-3 py-2 text-[12.5px] font-medium transition-[background-color,border-color,color,box-shadow] duration-150 max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
             isStandaloneComposerActive
               ? 'border-accent-line bg-surface text-ink shadow-[0_2px_6px_rgba(58,51,43,0.07)]'
               : 'border-line bg-surface/85 text-ink-dim shadow-[0_1px_2px_rgba(58,51,43,0.04)] hover:border-line-strong hover:bg-surface hover:text-ink'
@@ -96,10 +96,10 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           onClick={() => onNavigate(isModels ? 'workbench' : 'models')}
           aria-current={isModels ? 'page' : undefined}
           title={isModels ? '返回工作台' : '打开大模型配置 (/models)'}
-          className={`flex w-full items-center justify-between gap-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
+          className={`flex w-full items-center justify-between gap-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors duration-150 max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
             isModels
               ? 'border-accent-line bg-accent-soft text-accent-strong shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
-              : 'border-transparent bg-transparent text-ink-dim hover:border-line hover:bg-surface/80 hover:text-ink'
+              : 'border-transparent bg-transparent text-ink-dim hover:bg-surface-soft hover:text-ink'
           }`}
         >
           <span className="flex items-center gap-2">
@@ -124,10 +124,10 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
           onClick={() => onNavigate(isSettings ? 'workbench' : 'settings')}
           aria-current={isSettings ? 'page' : undefined}
           title={isSettings ? '返回工作台' : '打开设置 (/settings)'}
-          className={`flex w-full items-center justify-between gap-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
+          className={`flex w-full items-center justify-between gap-2 rounded-[8px] border px-2.5 py-1.5 text-[11.5px] font-medium transition-colors duration-150 max-[959px]:w-auto max-[959px]:whitespace-nowrap ${
             isSettings
               ? 'border-accent-line bg-accent-soft text-accent-strong shadow-[0_1px_2px_rgba(58,51,43,0.05)]'
-              : 'border-transparent bg-transparent text-ink-dim hover:border-line hover:bg-surface/80 hover:text-ink'
+              : 'border-transparent bg-transparent text-ink-dim hover:bg-surface-soft hover:text-ink'
           }`}
         >
           <span className="flex items-center gap-2">

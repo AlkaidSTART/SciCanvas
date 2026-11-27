@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { MotionConfig } from 'motion/react'
 import { CanvasStage } from './components/CanvasStage'
 import { ControlBar } from './components/ControlBar'
+import { FormulaComposerStage } from './components/FormulaComposerStage'
 import { InspectorPanel } from './components/InspectorPanel'
 import { ModelConfigPage } from './components/ModelConfigPage'
 import { SettingsPage } from './components/SettingsPage'
@@ -31,6 +32,7 @@ function App() {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const source = useWorkbenchStore((state) => state.source)
   const aiSpec = useWorkbenchStore((state) => state.aiSpec)
+  const viewMode = useWorkbenchStore((state) => state.viewMode)
   const presentation = useWorkbenchStore((state) => state.presentation)
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
@@ -47,6 +49,7 @@ function App() {
   const isSettings = route === 'settings'
   const isModels = route === 'models'
   const isSubPage = isSettings || isModels
+  const isComposer = !isSubPage && viewMode === 'composer'
   useAutoHeal()
   useWorkspaceAutoSave()
   useFloatingBallListener()
@@ -90,7 +93,7 @@ function App() {
         }
       }
 
-      if (mod || event.altKey || isEditableTarget(event.target)) return
+      if (mod || event.altKey || isComposer || isEditableTarget(event.target)) return
 
       if (event.code === 'Space' && !(event.target instanceof HTMLButtonElement)) {
         event.preventDefault()
@@ -112,11 +115,13 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [presentation, isSubPage, navigate, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
+  }, [presentation, isSubPage, isComposer, navigate, exitPresentation, toggleLeftPanel, toggleRightPanel, activeControls])
+
+  const hideRightPanel = isSubPage || isComposer
 
   const workspaceGridClass = presentation
     ? 'grid min-h-0 flex-1 grid-cols-1'
-    : isSubPage
+    : hideRightPanel
       ? leftPanelOpen
         ? 'grid min-h-0 flex-1 max-[959px]:grid-cols-1 max-[959px]:grid-rows-[auto_minmax(0,1fr)] min-[960px]:grid-cols-[248px_minmax(0,1fr)] min-[1280px]:grid-cols-[264px_minmax(0,1fr)]'
         : 'grid min-h-0 flex-1 grid-cols-1'
@@ -130,15 +135,16 @@ function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="flex h-svh w-full flex-col overflow-hidden bg-canvas bg-[radial-gradient(900px_520px_at_82%_-10%,rgba(168,190,214,0.38),transparent_62%),radial-gradient(680px_460px_at_6%_106%,rgba(224,162,121,0.26),transparent_60%)]">
+      <div className="app-shell-bg flex h-svh w-full flex-col overflow-hidden bg-canvas">
         <TopBar route={route} onNavigate={navigate} />
         <div className={workspaceGridClass}>
           <SidePanel route={route} onNavigate={navigate} />
           {isSettings && <SettingsPage onBack={() => navigate('workbench')} />}
           {isModels && <ModelConfigPage onBack={() => navigate('workbench')} />}
+          {isComposer && <FormulaComposerStage onNavigate={navigate} />}
           <main
-            className={isSubPage ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
-            aria-hidden={isSubPage || undefined}
+            className={hideRightPanel ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
+            aria-hidden={hideRightPanel || undefined}
           >
             <WindowTabBar />
             <CanvasStage
@@ -152,7 +158,7 @@ function App() {
               onReset={activeControls.reset}
             />
           </main>
-          {!isSubPage && <InspectorPanel />}
+          {!hideRightPanel && <InspectorPanel />}
         </div>
       </div>
     </MotionConfig>

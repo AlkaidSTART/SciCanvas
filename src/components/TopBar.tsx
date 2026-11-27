@@ -29,7 +29,10 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
   const title = useWorkbenchStore((state) => state.experiment.title)
   const domain = useWorkbenchStore((state) => state.experiment.domain)
   const activeGroupTitle = useWorkbenchStore((state) => state.activeGroupTitle)
+  const viewMode = useWorkbenchStore((state) => state.viewMode)
+  const composerTarget = useWorkbenchStore((state) => state.composerTarget)
   const presentation = useWorkbenchStore((state) => state.presentation)
+  const isComposer = !isSubPage && viewMode === 'composer'
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen)
   const rightPanelOpen = useWorkbenchStore((state) => state.rightPanelOpen)
   const enterPresentation = useWorkbenchStore((state) => state.enterPresentation)
@@ -176,93 +179,113 @@ export function TopBar({ route, onNavigate }: TopBarProps) {
         </div>
 
         <div className="mx-auto flex min-w-0 items-center gap-2 rounded-lg border border-line/80 bg-surface/75 px-2.5 py-1 max-[640px]:ml-auto max-[640px]:mr-0">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={`${domain}-${title}`}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={FAST_TRANSITION}
-              className="flex min-w-0 items-center gap-2"
-            >
+          {isComposer ? (
+            <div className="flex min-w-0 items-center gap-2">
               <span className="hidden whitespace-nowrap font-mono text-[9.5px] uppercase tracking-[0.1em] text-accent-strong min-[1040px]:inline">
-                {domain}
+                公式绘图
               </span>
               <span className="hidden text-line-strong min-[1040px]:inline">/</span>
-              {activeGroupTitle && activeGroupTitle !== title && (
-                <>
-                  <span className="hidden max-w-[14vw] truncate text-[11.5px] text-ink-faint min-[1140px]:inline">
-                    {activeGroupTitle}
-                  </span>
-                  <span className="hidden text-line-strong min-[1140px]:inline">·</span>
-                </>
-              )}
               <span className="min-w-0 max-w-[34vw] truncate text-[12.5px] font-medium text-ink max-[640px]:max-w-[46vw] max-[640px]:text-xs">
-                {title}
+                {composerTarget.groupTitle
+                  ? `${composerTarget.groupTitle} · 新建实验`
+                  : '新建实验'}
               </span>
-            </motion.div>
-          </AnimatePresence>
-          <AnimatePresence mode="wait" initial={false}>
-            {saveStateKey !== 'idle' && (
-              <motion.span
-                key={saveStateKey}
-                initial={{ opacity: 0, scale: 0.94 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.94 }}
-                transition={FAST_TRANSITION}
-                className="hidden items-center gap-1 whitespace-nowrap border-l border-line pl-2 text-[10px] text-ink-faint min-[1200px]:inline-flex"
-                title={storageError?.message}
-              >
-                {storageError
-                  ? '本地保存不可用'
-                  : saving
-                    ? '保存中…'
-                    : '已保存'}
-              </motion.span>
-            )}
-          </AnimatePresence>
+            </div>
+          ) : (
+            <>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={`${domain}-${title}`}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={FAST_TRANSITION}
+                  className="flex min-w-0 items-center gap-2"
+                >
+                  <span className="hidden whitespace-nowrap font-mono text-[9.5px] uppercase tracking-[0.1em] text-accent-strong min-[1040px]:inline">
+                    {domain}
+                  </span>
+                  <span className="hidden text-line-strong min-[1040px]:inline">/</span>
+                  {activeGroupTitle && activeGroupTitle !== title && (
+                    <>
+                      <span className="hidden max-w-[14vw] truncate text-[11.5px] text-ink-faint min-[1140px]:inline">
+                        {activeGroupTitle}
+                      </span>
+                      <span className="hidden text-line-strong min-[1140px]:inline">·</span>
+                    </>
+                  )}
+                  <span className="min-w-0 max-w-[34vw] truncate text-[12.5px] font-medium text-ink max-[640px]:max-w-[46vw] max-[640px]:text-xs">
+                    {title}
+                  </span>
+                </motion.div>
+              </AnimatePresence>
+              <AnimatePresence mode="wait" initial={false}>
+                {saveStateKey !== 'idle' && (
+                  <motion.span
+                    key={saveStateKey}
+                    initial={{ opacity: 0, scale: 0.94 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.94 }}
+                    transition={FAST_TRANSITION}
+                    className="hidden items-center gap-1 whitespace-nowrap border-l border-line pl-2 text-[10px] text-ink-faint min-[1200px]:inline-flex"
+                    title={storageError?.message}
+                  >
+                    {storageError
+                      ? '本地保存不可用'
+                      : saving
+                        ? '保存中…'
+                        : '已保存'}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </>
+          )}
         </div>
 
         <div className="flex flex-none items-center gap-1.5 max-[640px]:hidden">
-          <motion.button
-            whileTap={TAP_BUTTON}
-            className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
-            type="button"
-            onClick={() => {
-              if (isSubPage) onNavigate('workbench')
-              enterPresentation()
-            }}
-          >
-            演示模式
-          </motion.button>
-          <motion.button
-            whileTap={exporting ? undefined : TAP_BUTTON}
-            className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
-            type="button"
-            onClick={() => void handleExport()}
-            disabled={exporting}
-            aria-busy={exporting}
-          >
-            {exporting ? '导出中…' : '导出 HTML'}
-          </motion.button>
-          {!isSubPage && (
-            <div className="ml-1 hidden items-center border-l border-line pl-2.5 min-[960px]:flex">
+          {!isComposer && (
+            <>
               <motion.button
-                whileTap={TAP_ICON}
-                className={`grid size-[28px] place-items-center rounded-[7px] border transition-colors ${
-                  rightPanelOpen
-                    ? 'border-accent-line bg-accent-soft text-accent-strong'
-                    : 'border-transparent text-ink-faint hover:border-line hover:bg-surface-soft hover:text-ink-dim'
-                }`}
+                whileTap={TAP_BUTTON}
+                className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
                 type="button"
-                onClick={toggleRightPanel}
-                aria-pressed={rightPanelOpen}
-                aria-label={rightPanelOpen ? '收起右侧检查器' : '展开右侧检查器'}
-                title={rightPanelOpen ? '收起右侧检查器 (⌘I)' : '展开右侧检查器 (⌘I)'}
+                onClick={() => {
+                  if (isSubPage) onNavigate('workbench')
+                  enterPresentation()
+                }}
               >
-                <PanelRightIcon className="size-[15px]" />
+                演示模式
               </motion.button>
-            </div>
+              <motion.button
+                whileTap={exporting ? undefined : TAP_BUTTON}
+                className="rounded-lg border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors enabled:hover:border-line-strong enabled:hover:bg-surface-soft enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-45"
+                type="button"
+                onClick={() => void handleExport()}
+                disabled={exporting}
+                aria-busy={exporting}
+              >
+                {exporting ? '导出中…' : '导出 HTML'}
+              </motion.button>
+              {!isSubPage && (
+                <div className="ml-1 hidden items-center border-l border-line pl-2.5 min-[960px]:flex">
+                  <motion.button
+                    whileTap={TAP_ICON}
+                    className={`grid size-[28px] place-items-center rounded-[7px] border transition-colors ${
+                      rightPanelOpen
+                        ? 'border-accent-line bg-accent-soft text-accent-strong'
+                        : 'border-transparent text-ink-faint hover:border-line hover:bg-surface-soft hover:text-ink-dim'
+                    }`}
+                    type="button"
+                    onClick={toggleRightPanel}
+                    aria-pressed={rightPanelOpen}
+                    aria-label={rightPanelOpen ? '收起右侧检查器' : '展开右侧检查器'}
+                    title={rightPanelOpen ? '收起右侧检查器 (⌘I)' : '展开右侧检查器 (⌘I)'}
+                  >
+                    <PanelRightIcon className="size-[15px]" />
+                  </motion.button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </motion.header>

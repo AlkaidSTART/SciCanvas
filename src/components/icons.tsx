@@ -270,6 +270,37 @@ export function PencilIcon({ className }: IconProps) {
   )
 }
 
+export function PaletteIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 2.1a5.9 5.9 0 1 0 0 11.8h.7a1.5 1.5 0 0 0 1.44-1.92l-.15-.52a1.1 1.1 0 0 1 1.06-1.41h1.05A1.8 1.8 0 0 0 13.9 8.2 5.9 5.9 0 0 0 8 2.1Z"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
+      />
+      <circle cx="5.4" cy="6.6" r="0.9" fill="currentColor" />
+      <circle cx="8" cy="4.9" r="0.9" fill="currentColor" />
+      <circle cx="10.7" cy="6.6" r="0.9" fill="currentColor" />
+      <circle cx="5.7" cy="9.7" r="0.9" fill="currentColor" />
+    </svg>
+  )
+}
+
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.4 8.3 6.5 11.4 12.6 4.8"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 export function ArrowRightIcon({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
