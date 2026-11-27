@@ -61,7 +61,12 @@ export function closeDrawingWindowTab(recordId: string): void {
   if (workbench.workspaceRecordId !== recordId) return
 
   const remaining = openIds.filter((id) => id !== recordId)
-  if (remaining.length === 0) return
+  if (remaining.length === 0) {
+    workbench.setWorkspaceRecordId(null)
+    workbench.setActiveGroup(null, null)
+    workbench.openComposer()
+    return
+  }
 
   const nextId = remaining[Math.min(Math.max(index, 0), remaining.length - 1)]
   const nextEntry = workspace.entries.find((item) => item.id === nextId)

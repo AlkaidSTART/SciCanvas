@@ -6,8 +6,6 @@ import { createWorkspaceAutoSaver } from '../workspace/autoSave'
 import {
   buildWorkspaceRecord,
   createWorkspaceRecordId,
-  resolveRecordGroupId,
-  resolveRecordGroupTitle,
 } from '../workspace/records'
 
 /**
@@ -20,26 +18,9 @@ export function useWorkspaceAutoSave(): void {
   useEffect(() => {
     if (!hydrated) return undefined
 
-    // 首次水合完成后，确保当前画布对应的绘画窗口已登记并出现在窗口栏中。
+    // 若水合完成时用户已在画布中打开了某个记录，确保它登记在窗口栏中；默认不自动打开任何标签。
     const initialWorkbench = useWorkbenchStore.getState()
-    if (!initialWorkbench.workspaceRecordId && initialWorkbench.source === 'preset') {
-      const existing = useWorkspaceStore
-        .getState()
-        .entries.find(
-          (entry) =>
-            entry.status !== 'unsupported' &&
-            entry.source === 'preset' &&
-            entry.experimentId === initialWorkbench.experiment.id,
-        )
-      if (existing) {
-        initialWorkbench.setWorkspaceRecordId(existing.id)
-        initialWorkbench.setActiveGroup(
-          resolveRecordGroupId(existing),
-          resolveRecordGroupTitle(existing),
-        )
-        useWorkspaceStore.getState().openWindow(existing.id)
-      }
-    } else if (initialWorkbench.workspaceRecordId) {
+    if (initialWorkbench.viewMode === 'canvas' && initialWorkbench.workspaceRecordId) {
       useWorkspaceStore.getState().openWindow(initialWorkbench.workspaceRecordId)
     }
 

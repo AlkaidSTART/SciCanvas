@@ -141,7 +141,12 @@ function App() {
           <SidePanel route={route} onNavigate={navigate} />
           {isSettings && <SettingsPage onBack={() => navigate('workbench')} />}
           {isModels && <ModelConfigPage onBack={() => navigate('workbench')} />}
-          {isComposer && <FormulaComposerStage onNavigate={navigate} />}
+          {isComposer && (
+            <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+              <WindowTabBar />
+              <FormulaComposerStage onNavigate={navigate} />
+            </div>
+          )}
           <main
             className={hideRightPanel ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
             aria-hidden={hideRightPanel || undefined}
