@@ -255,3 +255,17 @@ export function TrashIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function PencilIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M11.3 2.5a1.5 1.5 0 0 1 2.12 2.12L6.1 11.94l-2.9.76.76-2.9L11.3 2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}

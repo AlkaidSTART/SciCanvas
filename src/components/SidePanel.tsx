@@ -46,10 +46,9 @@ const INSPIRATION_TAGS = [
 ]
 
 export function SidePanel({ route, onNavigate }: SidePanelProps) {
-  const isWorkspace = route === 'workspace'
   const isSettings = route === 'settings'
   const isModels = route === 'models'
-  const isSubPage = isWorkspace || isSettings || isModels
+  const isSubPage = isSettings || isModels
   const activeModelEndpoint = useModelConfigStore(
     (state) => state.endpoints.find((item) => item.isActive) ?? null,
   )
@@ -389,7 +388,6 @@ export function SidePanel({ route, onNavigate }: SidePanelProps) {
             onSelectWindow={() => {
               if (isSubPage) onNavigate('workbench')
             }}
-            onOpenFullManager={() => onNavigate(isWorkspace ? 'workbench' : 'workspace')}
           />
         </div>
       ) : (

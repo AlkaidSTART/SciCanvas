@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import {
-  getPresetTemplateById,
-  validateLlmEndpointInput,
-} from '../models/presets'
+import { validateLlmEndpointInput } from '../models/presets'
 import { LLM_API_FORMAT_OPTIONS } from '../models/types'
 import type { LlmApiFormat, LlmEndpointConfig } from '../models/types'
 import { useModelConfigStore } from '../store/useModelConfigStore'
@@ -41,7 +38,7 @@ function createDraftFromEndpoint(endpoint: LlmEndpointConfig): EndpointDraft {
     id: endpoint.id,
     name: endpoint.name,
     providerId: endpoint.providerId,
-    isPreset: endpoint.isPreset,
+    isPreset: false,
     isActive: endpoint.isActive,
     baseUrl: endpoint.baseUrl,
     apiKey: endpoint.apiKey,
@@ -80,7 +77,6 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
   const [selectedId, setSelectedId] = useState<string | 'new' | null>(null)
   const [editedDraft, setEditedDraft] = useState<EndpointDraft | null>(null)
   const [showKey, setShowKey] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackBanner | null>(null)
 
@@ -90,29 +86,23 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
     }
   }, [loaded, loading, loadEndpoints])
 
-  const presetEndpoints = useMemo(
-    () => endpoints.filter((item) => item.isPreset),
-    [endpoints],
-  )
-  const customEndpoints = useMemo(
-    () => endpoints.filter((item) => !item.isPreset),
-    [endpoints],
-  )
   const activeEndpoint = useMemo(
     () => endpoints.find((item) => item.isActive) ?? null,
     [endpoints],
   )
 
-  const effectiveSelectedId: string | 'new' | null =
-    selectedId ?? activeEndpoint?.id ?? endpoints[0]?.id ?? null
+  const effectiveSelectedId: string | 'new' =
+    selectedId ?? activeEndpoint?.id ?? endpoints[0]?.id ?? 'new'
 
   const selectedEndpoint = useMemo(
     () =>
-      effectiveSelectedId && effectiveSelectedId !== 'new'
+      effectiveSelectedId !== 'new'
         ? endpoints.find((item) => item.id === effectiveSelectedId) ?? null
         : null,
     [endpoints, effectiveSelectedId],
   )
+
+  const isCreating = effectiveSelectedId === 'new' || !selectedEndpoint
 
   const draft: EndpointDraft = useMemo(() => {
     if (editedDraft) return editedDraft
@@ -128,19 +118,12 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
     })
   }
 
-  const selectedTemplate = useMemo(
-    () => (selectedEndpoint?.isPreset ? getPresetTemplateById(selectedEndpoint.id) ?? null : null),
-    [selectedEndpoint],
-  )
-
-  const isCustomMode = selectedId === 'new' || !draft.isPreset
   const isAlreadyActive = Boolean(selectedEndpoint?.isActive)
 
   const selectEndpoint = (endpoint: LlmEndpointConfig) => {
     setSelectedId(endpoint.id)
     setEditedDraft(createDraftFromEndpoint(endpoint))
     setShowKey(false)
-    setShowAdvanced(false)
     setConfirmDelete(false)
     setFeedback(null)
     clearError()
@@ -150,7 +133,6 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
     setSelectedId('new')
     setEditedDraft(createEmptyCustomDraft())
     setShowKey(false)
-    setShowAdvanced(true)
     setConfirmDelete(false)
     setFeedback(null)
     clearError()
@@ -163,6 +145,7 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
 
     const validation = validateLlmEndpointInput({
       ...draft,
+      isPreset: false,
       isActive: activateAfterSave ? true : draft.isActive,
     })
     if (!validation.ok) {
@@ -192,21 +175,8 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
     void submitSave(!isAlreadyActive)
   }
 
-  const handleResetPreset = () => {
-    if (!selectedTemplate) return
-    updateDraft((current) => ({
-      ...current,
-      name: selectedTemplate.name,
-      baseUrl: selectedTemplate.baseUrl,
-      model: selectedTemplate.model,
-      visionModel: selectedTemplate.visionModel,
-      apiFormat: selectedTemplate.apiFormat,
-    }))
-    setFeedback({ tone: 'success', text: '已恢复默认参数（保留 API Key），点击保存生效' })
-  }
-
   const handleDeleteSelected = async () => {
-    if (!selectedEndpoint || selectedEndpoint.isPreset) return
+    if (!selectedEndpoint) return
     if (!confirmDelete) {
       setConfirmDelete(true)
       return
@@ -323,27 +293,24 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
               type="button"
               onClick={startCreateCustom}
               className={`flex w-full items-center justify-center gap-1 rounded-[9px] border px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                selectedId === 'new'
+                isCreating
                   ? 'border-accent-strong bg-accent-strong text-[#fbf7ef]'
                   : 'border-accent-line bg-accent-soft text-accent-strong hover:bg-accent-soft/80'
               }`}
             >
               <span>+</span>
-              <span>自定义端点</span>
+              <span>新建配置</span>
             </motion.button>
 
             {loading && endpoints.length === 0 ? (
               <p className="m-0 px-2 py-4 text-center text-[11px] text-ink-faint">加载中…</p>
+            ) : endpoints.length === 0 ? (
+              <p className="m-0 px-2 py-4 text-center text-[11px] leading-[1.6] text-ink-faint">
+                暂无模型配置
+              </p>
             ) : (
               <div className="flex flex-col gap-1">
-                {presetEndpoints.map(renderEndpointItem)}
-              </div>
-            )}
-
-            {customEndpoints.length > 0 && (
-              <div className="flex flex-col gap-1 border-t border-line pt-2">
-                <span className="px-2 text-[10px] font-medium text-ink-faint">自定义</span>
-                {customEndpoints.map(renderEndpointItem)}
+                {endpoints.map(renderEndpointItem)}
               </div>
             )}
           </aside>
@@ -353,17 +320,12 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
             <div className="flex items-center justify-between gap-2 border-b border-line pb-3">
               <div className="flex min-w-0 items-center gap-2">
                 <h2 className="m-0 truncate text-[14.5px] font-semibold text-ink">
-                  {selectedId === 'new' ? '新建自定义端点' : draft.name || '编辑端点'}
+                  {isCreating ? '新建模型配置' : draft.name || '编辑模型配置'}
                 </h2>
-                {selectedTemplate && (
-                  <span className="rounded-[5px] border border-line bg-surface px-1.5 py-0.5 text-[10px] text-ink-faint">
-                    {selectedTemplate.badge}
-                  </span>
-                )}
               </div>
               {isAlreadyActive && (
                 <span className="flex-none text-[11px] font-medium text-[#2f6b4b]">
-                  当前默认模型
+                  当前使用中
                 </span>
               )}
             </div>
@@ -389,39 +351,35 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
             </AnimatePresence>
 
             <form className="flex flex-col gap-3.5" onSubmit={handleFormSubmit}>
-              {isCustomMode && (
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-ink-dim">名称</span>
-                  <input
-                    className={INPUT_CLASS}
-                    type="text"
-                    value={draft.name}
-                    maxLength={80}
-                    placeholder="例如：公司网关 / Ollama"
-                    onChange={(event) =>
-                      updateDraft((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-              )}
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-ink-dim">名称</span>
+                <input
+                  className={INPUT_CLASS}
+                  type="text"
+                  value={draft.name}
+                  maxLength={80}
+                  placeholder="例如：公司网关 / DeepSeek / Ollama"
+                  onChange={(event) =>
+                    updateDraft((current) => ({ ...current, name: event.target.value }))
+                  }
+                />
+              </label>
 
-              {isCustomMode && (
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-ink-dim">Base URL</span>
-                  <input
-                    className={INPUT_CLASS}
-                    type="url"
-                    value={draft.baseUrl}
-                    maxLength={500}
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="https://api.example.com/v1"
-                    onChange={(event) =>
-                      updateDraft((current) => ({ ...current, baseUrl: event.target.value }))
-                    }
-                  />
-                </label>
-              )}
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-ink-dim">Base URL</span>
+                <input
+                  className={INPUT_CLASS}
+                  type="url"
+                  value={draft.baseUrl}
+                  maxLength={500}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="https://api.example.com/v1"
+                  onChange={(event) =>
+                    updateDraft((current) => ({ ...current, baseUrl: event.target.value }))
+                  }
+                />
+              </label>
 
               <label className="flex flex-col gap-1">
                 <span className="text-[11px] font-medium text-ink-dim">API Key</span>
@@ -448,185 +406,65 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
                 </div>
               </label>
 
-              <div className="flex flex-col gap-1.5">
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-ink-dim">模型名称</span>
+                <input
+                  className={INPUT_CLASS}
+                  type="text"
+                  value={draft.model}
+                  maxLength={160}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="例如：deepseek-chat / gpt-4o-mini"
+                  onChange={(event) =>
+                    updateDraft((current) => ({ ...current, model: event.target.value }))
+                  }
+                />
+              </label>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-ink-dim">协议格式</span>
+                  <div className="grid grid-cols-3 gap-1 rounded-[9px] border border-line bg-surface-soft p-1">
+                    {LLM_API_FORMAT_OPTIONS.map((option) => {
+                      const checked = draft.apiFormat === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            updateDraft((current) => ({ ...current, apiFormat: option.value }))
+                          }
+                          aria-pressed={checked}
+                          className={`rounded-[6px] py-1 text-[11px] font-medium transition-colors ${
+                            checked
+                              ? 'bg-panel text-accent-strong shadow-xs'
+                              : 'text-ink-dim hover:text-ink'
+                          }`}
+                        >
+                          {option.shortLabel}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
                 <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-medium text-ink-dim">模型名称</span>
+                  <span className="text-[11px] font-medium text-ink-dim">识图模型（可选）</span>
                   <input
                     className={INPUT_CLASS}
                     type="text"
-                    value={draft.model}
+                    value={draft.visionModel}
                     maxLength={160}
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder="例如：deepseek-chat / gpt-4o-mini"
+                    placeholder="留空则复用上方模型"
                     onChange={(event) =>
-                      updateDraft((current) => ({ ...current, model: event.target.value }))
+                      updateDraft((current) => ({ ...current, visionModel: event.target.value }))
                     }
                   />
                 </label>
-
-                {selectedTemplate && selectedTemplate.suggestedModels.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {selectedTemplate.suggestedModels.map((modelName) => (
-                      <button
-                        key={modelName}
-                        type="button"
-                        onClick={() =>
-                          updateDraft((current) => ({ ...current, model: modelName }))
-                        }
-                        className={`rounded-full border px-2 py-0.5 font-mono text-[10px] transition-colors ${
-                          draft.model === modelName
-                            ? 'border-accent-line bg-accent-soft text-accent-strong'
-                            : 'border-line bg-surface text-ink-dim hover:border-line-strong hover:text-ink'
-                        }`}
-                      >
-                        {modelName}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
-
-              {isCustomMode ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[11px] font-medium text-ink-dim">协议格式</span>
-                    <div className="grid grid-cols-3 gap-1 rounded-[9px] border border-line bg-surface-soft p-1">
-                      {LLM_API_FORMAT_OPTIONS.map((option) => {
-                        const checked = draft.apiFormat === option.value
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() =>
-                              updateDraft((current) => ({ ...current, apiFormat: option.value }))
-                            }
-                            aria-pressed={checked}
-                            className={`rounded-[6px] py-1 text-[11px] font-medium transition-colors ${
-                              checked
-                                ? 'bg-panel text-accent-strong shadow-xs'
-                                : 'text-ink-dim hover:text-ink'
-                            }`}
-                          >
-                            {option.shortLabel}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[11px] font-medium text-ink-dim">识图模型（可选）</span>
-                    <input
-                      className={INPUT_CLASS}
-                      type="text"
-                      value={draft.visionModel}
-                      maxLength={160}
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder="留空则复用默认模型"
-                      onChange={(event) =>
-                        updateDraft((current) => ({ ...current, visionModel: event.target.value }))
-                      }
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvanced((prev) => !prev)}
-                    className="flex w-fit items-center gap-1 text-[11px] text-ink-faint transition-colors hover:text-ink"
-                  >
-                    <span>{showAdvanced ? '▾' : '▸'}</span>
-                    <span>高级设置（地址 / 协议 / 识图模型）</span>
-                  </button>
-
-                  {showAdvanced && (
-                    <div className="flex flex-col gap-3 rounded-[10px] border border-line bg-surface/55 p-3">
-                      <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-medium text-ink-dim">Base URL</span>
-                        <input
-                          className={INPUT_CLASS}
-                          type="url"
-                          value={draft.baseUrl}
-                          maxLength={500}
-                          autoComplete="off"
-                          spellCheck={false}
-                          onChange={(event) =>
-                            updateDraft((current) => ({ ...current, baseUrl: event.target.value }))
-                          }
-                        />
-                      </label>
-
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[11px] font-medium text-ink-dim">协议格式</span>
-                          <div className="grid grid-cols-3 gap-1 rounded-[9px] border border-line bg-surface-soft p-1">
-                            {LLM_API_FORMAT_OPTIONS.map((option) => {
-                              const checked = draft.apiFormat === option.value
-                              return (
-                                <button
-                                  key={option.value}
-                                  type="button"
-                                  onClick={() =>
-                                    updateDraft((current) => ({
-                                      ...current,
-                                      apiFormat: option.value,
-                                    }))
-                                  }
-                                  aria-pressed={checked}
-                                  className={`rounded-[6px] py-1 text-[11px] font-medium transition-colors ${
-                                    checked
-                                      ? 'bg-panel text-accent-strong shadow-xs'
-                                      : 'text-ink-dim hover:text-ink'
-                                  }`}
-                                >
-                                  {option.shortLabel}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        <label className="flex flex-col gap-1">
-                          <span className="text-[11px] font-medium text-ink-dim">
-                            识图模型（可选）
-                          </span>
-                          <input
-                            className={INPUT_CLASS}
-                            type="text"
-                            value={draft.visionModel}
-                            maxLength={160}
-                            autoComplete="off"
-                            spellCheck={false}
-                            placeholder="留空则复用默认模型"
-                            onChange={(event) =>
-                              updateDraft((current) => ({
-                                ...current,
-                                visionModel: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-
-                      {selectedTemplate && (
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={handleResetPreset}
-                            className="text-[11px] text-ink-faint underline-offset-2 transition-colors hover:text-ink hover:underline disabled:opacity-50"
-                          >
-                            恢复预设默认值
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3.5">
                 <motion.button
@@ -649,7 +487,7 @@ export function ModelConfigPage({ onBack }: ModelConfigPageProps) {
                   </button>
                 )}
 
-                {selectedEndpoint && !selectedEndpoint.isPreset && (
+                {selectedEndpoint && (
                   <div className="ml-auto flex items-center gap-1.5">
                     <button
                       type="button"

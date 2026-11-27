@@ -41,11 +41,7 @@ function mergeEndpointList(
         ...list.map((item) => (saved.isActive ? { ...item, isActive: false } : item)),
         saved,
       ]
-  return next.sort((a, b) => {
-    if (a.isPreset !== b.isPreset) return a.isPreset ? -1 : 1
-    if (a.isPreset && b.isPreset) return a.createdAt - b.createdAt
-    return b.updatedAt - a.updatedAt
-  })
+  return next.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export const useModelConfigStore = create<ModelConfigState>((set) => ({

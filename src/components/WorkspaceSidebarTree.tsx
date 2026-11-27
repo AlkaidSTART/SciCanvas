@@ -12,6 +12,7 @@ import {
   FilterLinesIcon,
   FolderIcon,
   FolderPlusIcon,
+  PencilIcon,
   PlusIcon,
   TrashIcon,
 } from './icons'
@@ -19,7 +20,6 @@ import { FAST_TRANSITION, TAP_BUTTON } from './motion'
 
 interface WorkspaceSidebarTreeProps {
   onSelectWindow: () => void
-  onOpenFullManager: () => void
 }
 
 const DEFAULT_VISIBLE_WINDOWS = 6
@@ -40,13 +40,13 @@ function formatRelativeTime(timestamp: number, now: number): string {
 
 export function WorkspaceSidebarTree({
   onSelectWindow,
-  onOpenFullManager,
 }: WorkspaceSidebarTreeProps) {
   const entries = useWorkspaceStore((state) => state.entries)
   const hydrating = useWorkspaceStore((state) => state.hydrating)
   const createPresetWindow = useWorkspaceStore((state) => state.createPresetWindow)
   const duplicateWindow = useWorkspaceStore((state) => state.duplicateWindow)
   const deleteRecord = useWorkspaceStore((state) => state.deleteRecord)
+  const renameRecord = useWorkspaceStore((state) => state.renameRecord)
   const renameGroup = useWorkspaceStore((state) => state.renameGroup)
 
   const currentRecordId = useWorkbenchStore((state) => state.workspaceRecordId)
@@ -68,6 +68,8 @@ export function WorkspaceSidebarTree({
   const [newGroupName, setNewGroupName] = useState('')
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
   const [renameGroupValue, setRenameGroupValue] = useState('')
+  const [renamingWindowId, setRenamingWindowId] = useState<string | null>(null)
+  const [renameWindowValue, setRenameWindowValue] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -409,16 +411,12 @@ export function WorkspaceSidebarTree({
                     />
                   </div>
                 ) : (
-                  <div className="group/folder flex items-center gap-1 rounded-[8px] px-2 py-[6px] transition-colors hover:bg-surface/75">
+                  <div className="group/folder flex items-center gap-0.5 rounded-[8px] px-2 py-[6px] transition-colors hover:bg-surface/75">
                     <button
                       type="button"
                       onClick={() => toggleGroup(group.groupId)}
-                      onDoubleClick={() => {
-                        setRenamingGroupId(group.groupId)
-                        setRenameGroupValue(group.title)
-                      }}
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      title={`${group.title}（${group.windows.length} 个绘画窗口，双击可重命名）`}
+                      title={`${group.title}（${group.windows.length} 个绘画窗口）`}
                     >
                       <FolderIcon
                         className={`size-[14px] flex-none transition-colors ${
@@ -432,6 +430,19 @@ export function WorkspaceSidebarTree({
                       >
                         {group.title}
                       </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setRenamingGroupId(group.groupId)
+                        setRenameGroupValue(group.title)
+                      }}
+                      title={`重命名实验「${group.title}」`}
+                      className="grid size-5 flex-none place-items-center rounded-[5px] text-ink-faint opacity-0 transition-all hover:bg-surface-soft hover:text-ink group-hover/folder:opacity-100 focus:opacity-100"
+                    >
+                      <PencilIcon className="size-3" />
                     </button>
 
                     <button
@@ -451,6 +462,36 @@ export function WorkspaceSidebarTree({
                     {visibleWindows.map((win) => {
                       const active = win.id === currentRecordId
                       const confirming = confirmDeleteId === win.id
+                      const renamingWin = renamingWindowId === win.id
+                      if (renamingWin) {
+                        return (
+                          <div key={win.id} className="flex items-center gap-1 px-1.5 py-0.5">
+                            <input
+                              type="text"
+                              autoFocus
+                              maxLength={80}
+                              value={renameWindowValue}
+                              onChange={(event) => setRenameWindowValue(event.target.value)}
+                              className="min-w-0 flex-1 rounded-[6px] border border-accent-line bg-surface px-2 py-0.5 text-[11.5px] text-ink focus:outline-none"
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault()
+                                  void renameRecord(win.id, renameWindowValue)
+                                  setRenamingWindowId(null)
+                                } else if (event.key === 'Escape') {
+                                  setRenamingWindowId(null)
+                                }
+                              }}
+                              onBlur={() => {
+                                if (renameWindowValue.trim()) {
+                                  void renameRecord(win.id, renameWindowValue)
+                                }
+                                setRenamingWindowId(null)
+                              }}
+                            />
+                          </div>
+                        )
+                      }
                       return (
                         <div
                           key={win.id}
@@ -484,24 +525,38 @@ export function WorkspaceSidebarTree({
                             </span>
                           </button>
 
-                          {/* 悬停时显示轻量操作：同实验复制新窗 / 删除 */}
+                          {/* 悬停时显示轻量操作：重命名 / 同实验复制新窗 / 删除 */}
                           <div
                             className={`flex flex-none items-center gap-0.5 ${
                               confirming ? 'flex' : 'hidden group-hover/win:flex'
                             }`}
                           >
                             {!confirming && (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void handleDuplicate(win)
-                                }}
-                                title="在同实验内复制为新绘画窗口"
-                                className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors hover:bg-surface hover:text-ink"
-                              >
-                                <DuplicateIcon className="size-3" />
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setRenamingWindowId(win.id)
+                                    setRenameWindowValue(win.title)
+                                  }}
+                                  title="重命名该绘画窗口"
+                                  className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+                                >
+                                  <PencilIcon className="size-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void handleDuplicate(win)
+                                  }}
+                                  title="在同实验内复制为新绘画窗口"
+                                  className="grid size-5 place-items-center rounded-[5px] text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+                                >
+                                  <DuplicateIcon className="size-3" />
+                                </button>
+                              </>
                             )}
                             <button
                               type="button"
@@ -545,16 +600,9 @@ export function WorkspaceSidebarTree({
         )}
       </div>
 
-      {/* 底部轻量入口：可随时进入完整工作区管理 & SQLite 会话历史 */}
+      {/* 底部统计 */}
       <div className="flex flex-none items-center justify-between border-t border-line/70 px-3 py-1.5 text-[10px] text-ink-faint">
         <span>{groups.length} 个实验 · {filteredEntries.length} 窗口</span>
-        <button
-          type="button"
-          onClick={onOpenFullManager}
-          className="rounded-[5px] px-1.5 py-0.5 text-[10px] text-ink-dim transition-colors hover:bg-surface hover:text-ink"
-        >
-          完整管理 / 会话
-        </button>
       </div>
     </div>
   )

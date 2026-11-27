@@ -13,10 +13,6 @@ import { closeDrawingWindowTab, openDrawingWindow } from '../workspace/windowAct
 import { CloseIcon, DuplicateIcon, PlusIcon, WorkspaceIcon } from './icons'
 import { FAST_TRANSITION, TAP_BUTTON } from './motion'
 
-interface WindowTabBarProps {
-  onOpenWorkspace: () => void
-}
-
 interface TabItem {
   id: string
   title: string
@@ -26,7 +22,7 @@ interface TabItem {
   entry: WorkspaceEntry | null
 }
 
-export function WindowTabBar({ onOpenWorkspace }: WindowTabBarProps) {
+export function WindowTabBar() {
   const presentation = useWorkbenchStore((state) => state.presentation)
   const currentRecordId = useWorkbenchStore((state) => state.workspaceRecordId)
   const currentTitle = useWorkbenchStore((state) => state.experiment.title)
@@ -238,17 +234,6 @@ export function WindowTabBar({ onOpenWorkspace }: WindowTabBarProps) {
         >
           <PlusIcon className="size-3" />
           <span className="hidden sm:inline">新窗口</span>
-        </motion.button>
-
-        <motion.button
-          whileTap={TAP_BUTTON}
-          type="button"
-          className="flex h-[26px] items-center gap-1 rounded-[7px] border border-transparent px-2 text-[10.5px] text-ink-faint transition-colors hover:border-line hover:bg-surface hover:text-ink"
-          onClick={onOpenWorkspace}
-          title="管理全部实验与绘画窗口"
-        >
-          <WorkspaceIcon className="size-3" />
-          <span className="hidden md:inline">工作区</span>
         </motion.button>
 
         <AnimatePresence>

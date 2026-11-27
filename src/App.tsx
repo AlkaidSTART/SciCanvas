@@ -8,7 +8,6 @@ import { SettingsPage } from './components/SettingsPage'
 import { SidePanel } from './components/SidePanel'
 import { TopBar } from './components/TopBar'
 import { WindowTabBar } from './components/WindowTabBar'
-import { WorkspacePage } from './components/WorkspacePage'
 import { useAISandbox } from './hooks/useAISandbox'
 import { useAppRoute } from './hooks/useAppRoute'
 import { useAutoHeal } from './hooks/useAutoHeal'
@@ -45,10 +44,9 @@ function App() {
   const aiSandbox = useAISandbox(iframeRef)
   const usesSandbox = source === 'ai' && aiSpec?.renderType === 'canvas2d'
   const { route, navigate } = useAppRoute()
-  const isWorkspace = route === 'workspace'
   const isSettings = route === 'settings'
   const isModels = route === 'models'
-  const isSubPage = isWorkspace || isSettings || isModels
+  const isSubPage = isSettings || isModels
   useAutoHeal()
   useWorkspaceAutoSave()
   useFloatingBallListener()
@@ -136,14 +134,13 @@ function App() {
         <TopBar route={route} onNavigate={navigate} />
         <div className={workspaceGridClass}>
           <SidePanel route={route} onNavigate={navigate} />
-          {isWorkspace && <WorkspacePage onBack={() => navigate('workbench')} />}
           {isSettings && <SettingsPage onBack={() => navigate('workbench')} />}
           {isModels && <ModelConfigPage onBack={() => navigate('workbench')} />}
           <main
             className={isSubPage ? 'hidden' : 'flex min-h-0 min-w-0 flex-col overflow-hidden'}
             aria-hidden={isSubPage || undefined}
           >
-            <WindowTabBar onOpenWorkspace={() => navigate('workspace')} />
+            <WindowTabBar />
             <CanvasStage
               canvasRef={canvasRef}
               iframeRef={iframeRef}

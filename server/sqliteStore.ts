@@ -4,7 +4,6 @@ import { dirname, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { GenerationMode } from '../src/ai/prompt.ts'
 import type { GeneratedExperimentSpec } from '../src/ai/schema.ts'
-import { LLM_PRESET_TEMPLATES } from '../src/models/presets.ts'
 import { normalizeLlmApiFormat } from '../src/models/types.ts'
 import type { LlmEndpointConfig, UpsertLlmEndpointInput } from '../src/models/types.ts'
 import type {
@@ -323,15 +322,10 @@ export function createSqliteSessionStore(dbPath: string = DEFAULT_SQLITE_DB_PATH
      WHERE id = ?`,
   )
 
-  const stmtSeedLlmEndpoint = db.prepare(
-    `INSERT OR IGNORE INTO llm_endpoints (
-      id, name, provider_id, is_preset, is_active, base_url, api_key, model, vision_model, api_format, created_at, updated_at
-     ) VALUES (?, ?, ?, 1, 0, ?, '', ?, ?, ?, ?, ?)`,
-  )
   const stmtListLlmEndpoints = db.prepare(
     `SELECT id, name, provider_id, is_preset, is_active, base_url, api_key, model, vision_model, api_format, created_at, updated_at
      FROM llm_endpoints
-     ORDER BY is_preset DESC, CASE WHEN is_preset = 1 THEN created_at ELSE -updated_at END ASC`,
+     ORDER BY updated_at DESC`,
   )
   const stmtGetLlmEndpoint = db.prepare(
     `SELECT id, name, provider_id, is_preset, is_active, base_url, api_key, model, vision_model, api_format, created_at, updated_at
@@ -366,22 +360,8 @@ export function createSqliteSessionStore(dbPath: string = DEFAULT_SQLITE_DB_PATH
   )
   const stmtDeleteLlmEndpoint = db.prepare(`DELETE FROM llm_endpoints WHERE id = ?`)
 
-  // 初始化内置预设端点（已存在则保留用户配置不覆盖）
-  const seedBaseTime = 1_700_000_000_000
-  LLM_PRESET_TEMPLATES.forEach((preset, index) => {
-    const ts = seedBaseTime + index
-    stmtSeedLlmEndpoint.run(
-      preset.id,
-      preset.name,
-      preset.providerId,
-      preset.baseUrl,
-      preset.model,
-      preset.visionModel,
-      preset.apiFormat,
-      ts,
-      ts,
-    )
-  })
+  // 清理旧版本自动写入的未配置默认预设端点，保留用户已配置的端点
+  db.exec(`DELETE FROM llm_endpoints WHERE is_preset = 1 AND is_active = 0 AND trim(api_key) = ''`)
 
   const getSession = (id: string): SessionSummary | null => {
     const row = stmtGetSession.get(id) as SessionRow | undefined

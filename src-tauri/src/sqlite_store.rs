@@ -236,7 +236,7 @@ impl SqliteStore {
             .map_err(|err| format!("初始化 SQLite PRAGMA 失败: {err}"))?;
         conn.execute_batch(SCHEMA_SQL)
             .map_err(|err| format!("初始化 SQLite 表结构失败: {err}"))?;
-        seed_preset_llm_endpoints(&conn)?;
+        cleanup_unconfigured_preset_llm_endpoints(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -768,69 +768,12 @@ fn normalize_api_format(raw: &str) -> &'static str {
     }
 }
 
-fn seed_preset_llm_endpoints(conn: &Connection) -> Result<(), String> {
-    let presets: [(&str, &str, &str, &str, &str, &str, &str); 5] = [
-        (
-            "preset-deepseek",
-            "DeepSeek",
-            "deepseek",
-            "https://api.deepseek.com/v1",
-            "deepseek-chat",
-            "",
-            "chat",
-        ),
-        (
-            "preset-doubao",
-            "豆包 (Doubao)",
-            "doubao",
-            "https://ark.cn-beijing.volces.com/api/v3",
-            "doubao-1-5-pro-32k-250115",
-            "doubao-1-5-vision-pro-32k-250115",
-            "chat",
-        ),
-        (
-            "preset-qwen",
-            "通义千问 (Qwen)",
-            "qwen",
-            "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "qwen-plus",
-            "qwen-vl-max",
-            "chat",
-        ),
-        (
-            "preset-openai",
-            "OpenAI",
-            "openai",
-            "https://api.openai.com/v1",
-            "gpt-4o-mini",
-            "gpt-4o-mini",
-            "response",
-        ),
-        (
-            "preset-anthropic",
-            "Anthropic (Claude)",
-            "anthropic",
-            "https://api.anthropic.com/v1",
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4-20250514",
-            "anthropic",
-        ),
-    ];
-
-    let seed_base: i64 = 1_700_000_000_000;
-    for (idx, (id, name, provider_id, base_url, model, vision_model, api_format)) in
-        presets.iter().enumerate()
-    {
-        let ts = seed_base + idx as i64;
-        conn.execute(
-            "INSERT OR IGNORE INTO llm_endpoints (
-                id, name, provider_id, is_preset, is_active, base_url, api_key,
-                model, vision_model, api_format, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, 1, 0, ?4, '', ?5, ?6, ?7, ?8, ?9)",
-            params![id, name, provider_id, base_url, model, vision_model, api_format, ts, ts],
-        )
-        .map_err(|err| format!("初始化内置大模型端点失败: {err}"))?;
-    }
+fn cleanup_unconfigured_preset_llm_endpoints(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM llm_endpoints WHERE is_preset = 1 AND is_active = 0 AND trim(api_key) = ''",
+        [],
+    )
+    .map_err(|err| format!("清理未配置的默认大模型端点失败: {err}"))?;
     Ok(())
 }
 
@@ -877,7 +820,7 @@ pub fn sqlite_list_llm_endpoints(
             "SELECT id, name, provider_id, is_preset, is_active, base_url, api_key,
                     model, vision_model, api_format, created_at, updated_at
              FROM llm_endpoints
-             ORDER BY is_preset DESC, CASE WHEN is_preset = 1 THEN created_at ELSE -updated_at END ASC",
+             ORDER BY updated_at DESC",
         )
         .map_err(|err| format!("查询大模型端点列表失败: {err}"))?;
     let endpoints = stmt
